@@ -48,10 +48,10 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
 
         // ✅ Allow requests from your frontend (update IP/port as needed)
-        configuration.setAllowedOrigins(List.of("http://152.67.189.231:8844"));
+        configuration.setAllowedOrigins(List.of("*"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
-        configuration.setAllowCredentials(true);  // Needed if cookies/auth headers are used
+        configuration.setAllowCredentials(false);  // Needed if cookies/auth headers are used
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
