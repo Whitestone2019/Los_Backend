@@ -4,11 +4,16 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Random;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
-import org.hibernate.internal.build.AllowSysOut;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,250 +26,449 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.wssl.los.model.MenuPermission;
 import com.wssl.los.model.Organization;
+import com.wssl.los.model.Otp;
 import com.wssl.los.model.Role;
 import com.wssl.los.model.User;
-import com.wssl.los.repository.MenuPermissionRepository;
 import com.wssl.los.repository.OrganizationRepository;
+import com.wssl.los.repository.OtpRepository;
 import com.wssl.los.repository.RoleRepository;
 import com.wssl.los.repository.UserRepository;
+import com.wssl.los.service.RefreshTokenService;
 import com.wssl.los.util.JwtUtil;
 
 import at.favre.lib.crypto.bcrypt.BCrypt;
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
-	@Autowired
-	private UserRepository userRepository;
+    @Autowired
+    private UserRepository userRepository;
+    @Autowired
+    private RoleRepository roleRepository;
+    @Autowired
+    private OrganizationRepository organizationRepository;
+    @Autowired
+    private OtpRepository otpRepository;
+    @Autowired
+    private JwtUtil jwtUtil;
+    @Autowired
+    private JavaMailSender mailSender;
+    @Autowired
+    private RefreshTokenService refreshTokenService;
 
-	@Autowired
-	private RoleRepository roleRepository;
+    private AtomicLong userSequence = new AtomicLong(1);
+    private Map<String, String> otpStore = new HashMap<>(); // For /set-password tokens
+    private static final int OTP_EXPIRY_MINUTES = 5;
 
-	@Autowired
-	private OrganizationRepository organizationRepository;
+    // Generate 6-digit OTP
+    private String generateOtp() {
+        Random random = new Random();
+        int otp = 100000 + random.nextInt(900000); // 6-digit OTP
+        return String.valueOf(otp);
+    }
 
-	@Autowired
-	private MenuPermissionRepository menuPermissionRepository;
+    // Send OTP email
+    private void sendOtpEmail(String email, String otp) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setTo(email);
+            helper.setSubject("Your OTP for Login");
+            helper.setFrom("career@whitestones.co.in"); 
+            // HTML email content using string concatenation
+            String htmlContent = "<html>\n" +
+                                 "<body style='font-family: Arial, sans-serif; color: #333;'>\n" +
+                                 "<h2 style='color: #2E7D32;'>Your One-Time Password (OTP)</h2>\n" +
+                                 "<p>Dear User,</p>\n" +
+                                 "<p>Your OTP for login is:</p>\n" +
+                                 "<p style='font-size: 24px; font-weight: bold; color: #D81B60;'>" + otp + "</p>\n" +
+                                 "<p>This OTP is valid for <strong>" + OTP_EXPIRY_MINUTES + " minutes</strong>.</p>\n" +
+                                 "<p>Please do not share this OTP with anyone for security reasons.</p>\n" +
+                                 "<p>If you did not request this OTP, please contact our support team.</p>\n" +
+                                 "<p>Best regards,<br>Your Application Team</p>\n" +
+                                 "</body>\n" +
+                                 "</html>";
 
-	@Autowired
-	private JwtUtil jwtUtil;
+            helper.setText(htmlContent, true);
+            mailSender.send(message);
+        } catch (MessagingException e) {
+            throw new RuntimeException("Failed to send OTP email: " + e.getMessage(), e);
+        }
+    }
 
-	@PostMapping("/login")
-	public ResponseEntity<?> login(@RequestBody Map<String, String> request) {
-		String username = request.get("username");
-		String password = request.get("password");
-		System.out.println(username);
-		// Find user by username
-		User user = userRepository.findByUsername(username);
+    @PostMapping("/send-otp")
+    public ResponseEntity<?> login(@RequestBody Map<String, String> request) {
+        String identifier = request.get("username");
+        String password = request.get("password");
 
-		// Verify credentials
-		if (user != null && BCrypt.verifyer().verify(password.toCharArray(), user.getPasswordHash()).verified) {
-			// Generate JWT token
-			String token = jwtUtil.generateToken(user.getUsername());
+        User user = userRepository.findByEmail(identifier);
+        if (user == null) {
+            user = userRepository.findByUserId(identifier);
+        }
 
-			// Prepare response map with token and role
-			Map<String, Object> response = new HashMap<>();
-			response.put("token", token);
-			response.put("role", user.getRole() != null ? user.getRole().getRoleName() : null);
+        if (user != null && "N".equalsIgnoreCase(user.getDelflg())
+                && BCrypt.verifyer().verify(password.toCharArray(), user.getPasswordHash()).verified) {
 
-			return ResponseEntity.ok(response);
-		}
+            // Generate and save OTP
+            String otpValue = generateOtp();
+            LocalDateTime expiry = LocalDateTime.now().plusMinutes(OTP_EXPIRY_MINUTES);
+            Otp otp = new Otp();
+            otp.setEmail(user.getEmail());
+            otp.setOtp(otpValue);
+            otp.setExpiryDate(expiry);
+            otpRepository.save(otp);
 
-		return ResponseEntity.status(401).body("Invalid credentials");
-	}
-	
-	@GetMapping("/users")
-	public ResponseEntity<List<User>> getAllUser() {
-		return ResponseEntity.ok(userRepository.findAll());
-	}
+            // Send OTP via email
+            try {
+                sendOtpEmail(user.getEmail(), otpValue);
+            } catch (Exception e) {
+                return ResponseEntity.status(500).body("Failed to send OTP: " + e.getMessage());
+            }
 
-	@PostMapping("/register")
-	public ResponseEntity<?> register(@RequestBody Map<String, String> request) {
-		// Extract fields from request body
-		String username = request.get("username");
-		String password = request.get("password");
-		String email = request.get("email");
-		String fullName = request.get("fullName");
-		String roleIdStr = request.get("roleId");
-		String department = request.get("department");
+            // Return temporary response
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "OTP sent to your email");
+            response.put("email", user.getEmail());
+            return ResponseEntity.ok(response);
+        }
 
-		// Validate required fields
-		if (username == null || password == null || email == null || roleIdStr == null) {
-			return ResponseEntity.badRequest().body("Missing required fields: username, password, email, or roleId");
-		}
+        return ResponseEntity.status(401).body("Invalid credentials or deleted user");
+    }
 
-		// Check if username or email already exists
-		if (userRepository.findByUsername(username) != null) {
-			return ResponseEntity.badRequest().body("Username already exists");
-		}
-		if (userRepository.findByEmail(email) != null) {
-			return ResponseEntity.badRequest().body("Email already exists");
-		}
+    @PostMapping("/verify-otp")
+    public ResponseEntity<?> verifyOtp(@RequestBody Map<String, String> request) {
+        String email = request.get("email");
+        String otpValue = request.get("otp");
 
-		// Parse roleId
-		Long roleId;
-		try {
-			roleId = Long.parseLong(roleIdStr);
-		} catch (NumberFormatException e) {
-			return ResponseEntity.badRequest().body("Invalid roleId format");
-		}
+        Optional<Otp> otpOptional = otpRepository.findById(email);
+        if (otpOptional.isEmpty() || otpOptional.get().isExpired()) {
+            return ResponseEntity.status(400).body("OTP expired or invalid");
+        }
 
-		// Fetch role
-		Role role = roleRepository.findById(roleId).orElseThrow(() -> new RuntimeException("Role not found"));
+        Otp otp = otpOptional.get();
+        if (!otp.getOtp().equals(otpValue)) {
+            return ResponseEntity.status(400).body("Invalid OTP");
+        }
 
-		// Create and populate User entity
-		User user = new User();
-		user.setUsername(username);
-		user.setPasswordHash(BCrypt.withDefaults().hashToString(12, password.toCharArray()));
-		user.setEmail(email);
-		user.setFullName(fullName);
-		user.setRole(role);
+        // OTP is valid, fetch user
+        User user = userRepository.findByEmail(email);
+        if (user == null || !"N".equalsIgnoreCase(user.getDelflg())) {
+            return ResponseEntity.status(401).body("User not found or deleted");
+        }
 
-		// Save user
-		userRepository.save(user);
+        // Generate tokens
+        String accessToken = jwtUtil.generateToken(user.getEmail());
+        String refreshToken = jwtUtil.generateRefreshToken(user.getEmail());
 
-		// Return success message
-		return ResponseEntity.ok("Registration successful");
-	}
+        // Save refresh token
+        refreshTokenService.saveRefreshToken(user.getEmail(), refreshToken);
 
-	@PostMapping("/set-password")
-	@PreAuthorize("isAuthenticated()")
-	public ResponseEntity<?> setPassword(@RequestBody Map<String, String> request) {
-		String username = request.get("username");
-		String newPassword = request.get("newPassword");
-		User user = userRepository.findByUsername(username);
-		if (user == null) {
-			return ResponseEntity.badRequest().body("User not found");
-		}
-		user.setPasswordHash(BCrypt.withDefaults().hashToString(12, newPassword.toCharArray()));
-		userRepository.save(user);
-		return ResponseEntity.ok("Password updated successfully");
-	}
+        // Clear OTP
+        otpRepository.deleteById(email);
 
-	@PostMapping("/reset-password")
-	public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> request) {
-		String email = request.get("email");
-		String newPassword = request.get("newPassword");
-		User user = userRepository.findByEmail(email);
-		if (user == null) {
-			return ResponseEntity.badRequest().body("Email not found");
-		}
-		// Simplified: In production, send a reset token via email
-		user.setPasswordHash(BCrypt.withDefaults().hashToString(12, newPassword.toCharArray()));
-		userRepository.save(user);
-		return ResponseEntity.ok("Password reset successfully");
-	}
+        // Prepare response
+        Map<String, Object> response = new HashMap<>();
+        response.put("token", accessToken);
+        response.put("refreshToken", refreshToken);
+        response.put("userId", user.getUserId());
+        response.put("role", user.getRole() != null ? user.getRole().getRoleName() : null);
 
-	@PostMapping("/roles")
-	public ResponseEntity<?> createRole(@RequestBody @Valid Role role) {
-		role.setRcreTime(LocalDateTime.now());
-		roleRepository.save(role);
-		return ResponseEntity.ok(role);
-	}
+        return ResponseEntity.ok(response);
+    }
 
-	@PutMapping("/roles/{id}")
-	public ResponseEntity<?> updateRole(@PathVariable Long id, @RequestBody @Valid Role role) {
-		Role existingRole = roleRepository.findById(id).orElseThrow(() -> new RuntimeException("Role not found"));
-		existingRole.setRoleName(role.getRoleName());
-		existingRole.setDescription(role.getDescription());
-		existingRole.setUpdtTime(LocalDateTime.now());
-		roleRepository.save(existingRole);
-		return ResponseEntity.ok(existingRole);
-	}
+    @PostMapping("/refresh-token")
+    public ResponseEntity<?> refreshToken(@RequestBody Map<String, String> request) {
+        String refreshToken = request.get("refreshToken");
 
-	@DeleteMapping("/roles/{id}")
-	public ResponseEntity<?> deleteRole(@PathVariable Long id) {
-		Role role = roleRepository.findById(id).orElseThrow(() -> new RuntimeException("Role not found"));
-		roleRepository.delete(role);
-		return ResponseEntity.ok("Role deleted successfully");
-	}
+        if (refreshToken == null || !refreshTokenService.isRefreshTokenValid(refreshToken)) {
+            return ResponseEntity.status(401).body("Invalid or expired refresh token");
+        }
 
-	@GetMapping("/roles")
-	public ResponseEntity<List<Role>> getAllRoles() {
-		return ResponseEntity.ok(roleRepository.findAll());
-	}
+        String username = jwtUtil.getUsernameFromToken(refreshToken);
+        User user = userRepository.findByEmail(username);
+        if (user == null || !"N".equalsIgnoreCase(user.getDelflg())) {
+            return ResponseEntity.status(401).body("User not found or deleted");
+        }
 
-	@PostMapping("/organizations")
-	public ResponseEntity<?> createOrganization(@RequestParam String name, @RequestParam String address,
-			@RequestPart("logo") MultipartFile logo) {
-		Organization org = new Organization();
-		org.setName(name);
-		org.setAddress(address);
-		org.setLogo(logo.getOriginalFilename());
-		org.setRcreTime(LocalDateTime.now());
-		organizationRepository.save(org);
-		return ResponseEntity.ok(org);
-	}
+        String newAccessToken = jwtUtil.generateToken(username);
+        String newRefreshToken = jwtUtil.generateRefreshToken(username);
+        refreshTokenService.deleteRefreshToken(refreshToken);
+        refreshTokenService.saveRefreshToken(username, newRefreshToken);
 
-	@PutMapping("/organizations/{id}")
-	public ResponseEntity<?> updateOrganization(@PathVariable Long id, @RequestParam String name,
-			@RequestParam String address, @RequestPart(value = "logo", required = false) MultipartFile logo) {
-		Organization org = organizationRepository.findById(id)
-				.orElseThrow(() -> new RuntimeException("Organization not found"));
-		org.setName(name);
-		org.setAddress(address);
-		if (logo != null) {
-			org.setLogo(logo.getOriginalFilename());
-		}
-		org.setUpdtTime(LocalDateTime.now());
-		organizationRepository.save(org);
-		return ResponseEntity.ok(org);
-	}
+        Map<String, Object> response = new HashMap<>();
+        response.put("token", newAccessToken);
+        response.put("refreshToken", newRefreshToken);
+        return ResponseEntity.ok(response);
+    }
 
-	@DeleteMapping("/organizations/{id}")
-	public ResponseEntity<?> deleteOrganization(@PathVariable Long id) {
-		Organization org = organizationRepository.findById(id)
-				.orElseThrow(() -> new RuntimeException("Organization not found"));
-		organizationRepository.delete(org);
-		return ResponseEntity.ok("Organization deleted successfully");
-	}
+    @PostMapping("/register")
+    public ResponseEntity<?> register(@RequestBody Map<String, String> request) {
+        String email = request.get("email");
+        String firstName = request.get("firstName");
+        String lastName = request.get("lastName");
+        String roleIdStr = request.get("roleId");
+        String createdBy = request.get("createdBy");
 
-	@GetMapping("/organizations")
-	public ResponseEntity<List<Organization>> getAllOrganizations() {
-		return ResponseEntity.ok(organizationRepository.findAll());
-	}
+        if (firstName == null || email == null || roleIdStr == null) {
+            return ResponseEntity.badRequest().body("Missing required fields");
+        }
 
-	@PostMapping("/menu-permissions")
-	public ResponseEntity<?> createMenuPermission(@RequestBody @Valid MenuPermission permission) {
-		Role role = roleRepository.findById(permission.getRoleId())
-				.orElseThrow(() -> new RuntimeException("Role not found"));
-		permission.setRcreTime(LocalDateTime.now());
-		menuPermissionRepository.save(permission);
-		return ResponseEntity.ok(permission);
-	}
+        if (userRepository.findByEmail(email) != null) {
+            return ResponseEntity.badRequest().body("Email already exists");
+        }
 
-	@PutMapping("/menu-permissions/{id}")
-	public ResponseEntity<?> updateMenuPermission(@PathVariable Long id,
-			@RequestBody @Valid MenuPermission permission) {
-		MenuPermission existingPermission = menuPermissionRepository.findById(id)
-				.orElseThrow(() -> new RuntimeException("Menu permission not found"));
-		Role role = roleRepository.findById(permission.getRoleId())
-				.orElseThrow(() -> new RuntimeException("Role not found"));
-		existingPermission.setRoleId(permission.getRoleId());
-		existingPermission.setMenuName(permission.getMenuName());
-		existingPermission.setReadPermission(permission.isReadPermission());
-		existingPermission.setWritePermission(permission.isWritePermission());
-		existingPermission.setViewPermission(permission.isViewPermission());
-		existingPermission.setAllPermission(permission.isAllPermission());
-		existingPermission.setUpdtTime(LocalDateTime.now());
-		menuPermissionRepository.save(existingPermission);
-		return ResponseEntity.ok(existingPermission);
-	}
+        Long roleId;
+        try {
+            roleId = Long.parseLong(roleIdStr);
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body("Invalid roleId format");
+        }
 
-	@DeleteMapping("/menu-permissions/{id}")
-	public ResponseEntity<?> deleteMenuPermission(@PathVariable Long id) {
-		MenuPermission permission = menuPermissionRepository.findById(id)
-				.orElseThrow(() -> new RuntimeException("Menu permission not found"));
-		menuPermissionRepository.delete(permission);
-		return ResponseEntity.ok("Menu permission deleted successfully");
-	}
+        // Fixed orElseThrow syntax
+        Role role = roleRepository.findById(roleId).orElseThrow(() -> new RuntimeException("Role not found"));
 
-	@GetMapping("/menu-permissions")
-	public ResponseEntity<List<MenuPermission>> getAllMenuPermissions() {
-		return ResponseEntity.ok(menuPermissionRepository.findAll());
-	}
+        User user = new User();
+        user.setEmail(email);
+        user.setFirstName(firstName);
+        user.setLastName(lastName);
+        user.setRole(role);
+        user.setRcreationTime(LocalDateTime.now());
+        user.setRcreationUser(createdBy != null ? createdBy : "system");
+        user.setDelflg("N");
+        user.setActive(true);
+
+        long count = userRepository.count() + 1;
+        String userId = String.format("USR%03d", count);
+        user.setUserId(userId);
+
+        String token = UUID.randomUUID().toString();
+        otpStore.put(email, token);
+        userRepository.save(user);
+
+        sendPasswordSetupEmail(email, token);
+
+        Map<String, String> response = new HashMap<>();
+        response.put("userId", userId);
+        response.put("message", "Registration successful. Check email for password setup.");
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/create-account")
+    public ResponseEntity<?> createAccount(@RequestBody Map<String, String> request) {
+        String email = request.get("email");
+        String firstName = request.get("firstName");
+        String lastName = request.get("lastName");
+        String password = request.get("password");
+        String roleIdStr = request.get("roleId");
+        String createdBy = request.get("createdBy");
+
+        if (firstName == null || email == null || roleIdStr == null || password == null) {
+            return ResponseEntity.badRequest().body("Missing required fields");
+        }
+
+        if (userRepository.findByEmail(email) != null) {
+            return ResponseEntity.badRequest().body("Email already exists");
+        }
+
+        Long roleId;
+        try {
+            roleId = Long.parseLong(roleIdStr);
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body("Invalid roleId format");
+        }
+
+        // Fixed orElseThrow syntax
+        Role role = roleRepository.findById(roleId).orElseThrow(() -> new RuntimeException("Role not found"));
+
+        User user = new User();
+        user.setEmail(email);
+        user.setFirstName(firstName);
+        user.setLastName(lastName);
+        user.setPasswordHash(BCrypt.withDefaults().hashToString(12, password.toCharArray()));
+        user.setRole(role);
+        user.setRcreationTime(LocalDateTime.now());
+        user.setRcreationUser(createdBy != null ? createdBy : "system");
+        user.setDelflg("N");
+        user.setActive(true);
+
+        long count = userRepository.count() + 1;
+        String userId = String.format("USR%03d", count);
+        user.setUserId(userId);
+
+        userRepository.save(user);
+
+        Map<String, String> response = new HashMap<>();
+        response.put("userId", userId);
+        response.put("message", "Account created successfully");
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/forget-password")
+    public ResponseEntity<?> forgetPassword(@RequestBody Map<String, String> request) {
+        String identifier = request.get("identifier");
+
+        User user = userRepository.findByEmail(identifier);
+        if (user == null) {
+            user = userRepository.findByUserId(identifier);
+        }
+
+        if (user == null || "Y".equalsIgnoreCase(user.getDelflg())) {
+            return ResponseEntity.badRequest().body("User not found or deleted");
+        }
+
+        String otp = String.format("%06d", (int) (Math.random() * 1000000));
+        Otp otpEntity = new Otp();
+        otpEntity.setEmail(user.getEmail());
+        otpEntity.setOtp(otp);
+        otpEntity.setExpiryDate(LocalDateTime.now().plusMinutes(10));
+        otpRepository.save(otpEntity);
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(user.getEmail());
+        message.setSubject("Password Reset OTP");
+        message.setText("Your OTP for password reset is: " + otp + "\nValid for 10 minutes.");
+        mailSender.send(message);
+
+        return ResponseEntity.ok("OTP sent to registered email");
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> request) {
+        String email = request.get("email");
+        String otp = request.get("otp");
+        String newPassword = request.get("newPassword");
+
+        Optional<Otp> otpOptional = otpRepository.findById(email);
+        if (otpOptional.isEmpty() || otpOptional.get().isExpired()) {
+            return ResponseEntity.badRequest().body("Invalid or expired OTP");
+        }
+
+        Otp otpEntity = otpOptional.get();
+        if (!otpEntity.getOtp().equals(otp)) {
+            return ResponseEntity.badRequest().body("Invalid OTP");
+        }
+
+        User user = userRepository.findByEmail(email);
+        if (user == null) {
+            return ResponseEntity.badRequest().body("User not found");
+        }
+
+        user.setPasswordHash(BCrypt.withDefaults().hashToString(12, newPassword.toCharArray()));
+        userRepository.save(user);
+
+        otpRepository.deleteById(email);
+        return ResponseEntity.ok("Password reset successful");
+    }
+
+    @PostMapping("/set-password")
+    public ResponseEntity<?> setPassword(@RequestBody Map<String, String> request) {
+        String email = request.get("email");
+        String token = request.get("token");
+        String password = request.get("password");
+
+        String storedToken = otpStore.get(email);
+        if (storedToken == null || !storedToken.equals(token)) {
+            return ResponseEntity.badRequest().body("Invalid or expired token");
+        }
+
+        User user = userRepository.findByEmail(email);
+        if (user == null) {
+            return ResponseEntity.badRequest().body("User not found");
+        }
+
+        user.setPasswordHash(BCrypt.withDefaults().hashToString(12, password.toCharArray()));
+        userRepository.save(user);
+
+        otpStore.remove(email);
+        return ResponseEntity.ok("Password set successful");
+    }
+
+    private void sendPasswordSetupEmail(String email, String token) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(email);
+        message.setSubject("Set Your Password");
+        message.setText("Please set your password using this link: http://your-app-url/set-password?email=" + email
+                + "&token=" + token + "\nLink valid for 24 hours.");
+        mailSender.send(message);
+    }
+
+    @GetMapping("/users")
+    public ResponseEntity<List<User>> getAllUser() {
+        List<User> activeUsers = userRepository.findAll().stream()
+                .filter(user -> !"Y".equalsIgnoreCase(user.getDelflg())).toList();
+        return ResponseEntity.ok(activeUsers);
+    }
+
+    @PostMapping("/roles")
+    public ResponseEntity<?> createRole(@RequestBody @Valid Role role) {
+        role.setRcreTime(LocalDateTime.now());
+        roleRepository.save(role);
+        return ResponseEntity.ok(role);
+    }
+
+    @PutMapping("/roles/{id}")
+    public ResponseEntity<?> updateRole(@PathVariable Long id, @RequestBody @Valid Role role) {
+        Role existingRole = roleRepository.findById(id).orElseThrow(() -> new RuntimeException("Role not found"));
+
+        existingRole.setRoleName(role.getRoleName());
+        existingRole.setDescription(role.getDescription());
+        existingRole.setUpdtTime(LocalDateTime.now());
+
+        roleRepository.save(existingRole);
+        return ResponseEntity.ok(existingRole);
+    }
+
+    @GetMapping("/roles")
+    public ResponseEntity<List<Role>> getAllRoles() {
+        return ResponseEntity.ok(roleRepository.findAll());
+    }
+
+    @PostMapping("/organizations")
+    public ResponseEntity<?> createOrganization(@RequestParam String name, @RequestParam String address,
+            @RequestPart("logo") MultipartFile logo) {
+        Organization org = new Organization();
+        org.setName(name);
+        org.setAddress(address);
+        org.setLogo(logo.getOriginalFilename());
+        org.setRcreTime(LocalDateTime.now());
+
+        organizationRepository.save(org);
+        return ResponseEntity.ok(org);
+    }
+
+    @PutMapping("/organizations/{id}")
+    public ResponseEntity<?> updateOrganization(@PathVariable Long id, @RequestParam String name,
+            @RequestParam String address, @RequestPart(value = "logo", required = false) MultipartFile logo) {
+        Organization org = organizationRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Role not found"));
+
+        org.setName(name);
+        org.setAddress(address);
+        if (logo != null) {
+            org.setLogo(logo.getOriginalFilename());
+        }
+        org.setUpdtTime(LocalDateTime.now());
+
+        organizationRepository.save(org);
+        return ResponseEntity.ok(org);
+    }
+
+    @DeleteMapping("/organizations/{id}")
+    public ResponseEntity<?> deleteOrganization(@PathVariable Long id) {
+        Organization org = organizationRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Organization not found"));
+
+        organizationRepository.delete(org);
+        return ResponseEntity.ok("Organization deleted successfully");
+    }
+
+    @GetMapping("/organizations")
+    public ResponseEntity<List<Organization>> getAllOrganizations() {
+        return ResponseEntity.ok(organizationRepository.findAll());
+    }
 }

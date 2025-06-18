@@ -8,7 +8,8 @@ import com.wssl.los.model.User;
 // Repository Interfaces
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
-	User findByUsername(String username);
+
+	User findByUserId(String userId);
 
 	User findByEmail(String email);
 }
