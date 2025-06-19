@@ -77,6 +77,42 @@ public class AuthController {
         mailSender.send(message);
     }
 
+//    @PostMapping("/send-otp")
+//    public ResponseEntity<ApiResponse<Map<String, String>>> login(@RequestBody Map<String, String> request) {
+//        String identifier = request.get("username");
+//        String password = request.get("password");
+//
+//        if (identifier == null || password == null) {
+//            return ResponseEntity.badRequest()
+//                    .body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Username and password are required"));
+//        }
+//
+//        User user = userRepository.findByEmail(identifier);
+//        if (user == null) {
+//            user = userRepository.findByUserId(identifier);
+//        }
+//
+//        if (user == null || "Y".equalsIgnoreCase(user.getDelflg()) ||
+//                !BCrypt.verifyer().verify(password.toCharArray(), user.getPasswordHash()).verified) {
+//            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+//                    .body(new ApiResponse<>(HttpStatus.UNAUTHORIZED.value(), "Invalid credentials or deleted user"));
+//        }
+//
+//        String otpValue = generateOtp();
+//        LocalDateTime expiry = LocalDateTime.now().plusMinutes(OTP_EXPIRY_MINUTES);
+//
+//        Otp otp = new Otp();
+//        otp.setEmail(user.getEmail());
+//        otp.setOtp(otpValue);
+//        otp.setExpiryDate(expiry);
+//        otpRepository.save(otp);
+//
+//        sendOtpEmail(user.getEmail(), otpValue);
+//
+//        Map<String, String> data = new HashMap<>();
+//        data.put("email", user.getEmail());
+//        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "OTP sent to your email", data));
+//    }
     @PostMapping("/send-otp")
     public ResponseEntity<ApiResponse<Map<String, String>>> login(@RequestBody Map<String, String> request) {
         String identifier = request.get("username");
@@ -98,7 +134,8 @@ public class AuthController {
                     .body(new ApiResponse<>(HttpStatus.UNAUTHORIZED.value(), "Invalid credentials or deleted user"));
         }
 
-        String otpValue = generateOtp();
+        // Hardcoded OTP for development/testing
+        String otpValue = "123456"; // <--- Replace with generateOtp() for production
         LocalDateTime expiry = LocalDateTime.now().plusMinutes(OTP_EXPIRY_MINUTES);
 
         Otp otp = new Otp();
@@ -107,12 +144,14 @@ public class AuthController {
         otp.setExpiryDate(expiry);
         otpRepository.save(otp);
 
-        sendOtpEmail(user.getEmail(), otpValue);
+        sendOtpEmail(user.getEmail(), otpValue); // still sends the hardcoded OTP
 
         Map<String, String> data = new HashMap<>();
         data.put("email", user.getEmail());
+        data.put("otp", otpValue); // optional: useful for frontend testing
         return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "OTP sent to your email", data));
     }
+
 
     @PostMapping("/verify-otp")
     public ResponseEntity<ApiResponse<Map<String, Object>>> verifyOtp(@RequestBody Map<String, String> request) {
