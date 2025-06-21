@@ -35,7 +35,7 @@ public class SecurityConfig {
             .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             .and()
             .authorizeHttpRequests()
-                .requestMatchers("/api/auth/send-otp", "/api/auth/create-account", "/api/auth/refresh-token","/api/auth/verify-otp","/api/auth/forget-password").permitAll()
+                .requestMatchers("/api/auth/send-otp", "/api/auth/create-account", "/api/auth/refresh-token","/api/auth/verify-otp","/api/auth/forget-password","/api/auth/reset-password").permitAll()
                 .requestMatchers("/api/auth/**").authenticated()
                 .anyRequest().authenticated()
             .and()
