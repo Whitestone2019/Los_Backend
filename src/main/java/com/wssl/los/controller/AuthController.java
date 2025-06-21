@@ -29,13 +29,17 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.wssl.los.model.ApiResponse;
 import com.wssl.los.model.ApplicationDetail;
+import com.wssl.los.model.Menu;
 import com.wssl.los.model.Organization;
 import com.wssl.los.model.Otp;
 import com.wssl.los.model.Role;
+import com.wssl.los.model.RoleMenuPermission;
 import com.wssl.los.model.User;
 import com.wssl.los.repository.ApplicationDetailRepository;
+import com.wssl.los.repository.MenuRepository;
 import com.wssl.los.repository.OrganizationRepository;
 import com.wssl.los.repository.OtpRepository;
+import com.wssl.los.repository.RoleMenuPermissionRepository;
 import com.wssl.los.repository.RoleRepository;
 import com.wssl.los.repository.UserRepository;
 import com.wssl.los.service.RefreshTokenService;
@@ -66,6 +70,11 @@ public class AuthController {
 	private RefreshTokenService refreshTokenService;
 	
 	@Autowired
+    private RoleMenuPermissionRepository permissionRepository;
+	@Autowired
+    private MenuRepository menuRepository;
+	
+	@Autowired
 	private ApplicationDetailRepository applicationDetailRepository;
 
 	private AtomicLong userSequence = new AtomicLong(1);
@@ -77,7 +86,7 @@ public class AuthController {
 		return String.format("%06d", 100000 + random.nextInt(900000));
 	}
 
-	private void sendOtpEmail(String email, String otp) {
+private void sendOtpEmail(String email, String otp) {
 		try {
 			MimeMessage message = mailSender.createMimeMessage();
 			MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
@@ -93,14 +102,14 @@ public class AuthController {
 		}
 	}
 
-	private void sendPasswordSetupEmail(String email, String token) {
+private void sendPasswordSetupEmail(String email, String token) {
 		SimpleMailMessage message = new SimpleMailMessage();
 		message.setTo(email);
 		message.setSubject("Set Your Password");
-		message.setText("Set your password: http://your-app-url/set-password?email=" + email + "&token=" + token
+		message.setText("Set your password: http://152.67.189.231:8844/reset_password?email=" + email + "&token=" + token
 				+ "\nValid for 24 hours.");
 		mailSender.send(message);
-	}
+}
 
 //    @PostMapping("/send-otp")
 //    public ResponseEntity<ApiResponse<Map<String, String>>> login(@RequestBody Map<String, String> request) {
@@ -169,7 +178,7 @@ public class AuthController {
 		otp.setExpiryDate(expiry);
 		otpRepository.save(otp);
 
-		sendOtpEmail(user.getEmail(), otpValue); // still sends the hardcoded OTP
+		//sendOtpEmail(user.getEmail(), otpValue); // still sends the hardcoded OTP
 
 		Map<String, String> data = new HashMap<>();
 		data.put("email", user.getEmail());
@@ -252,6 +261,7 @@ public class AuthController {
 		String firstName = request.get("firstName");
 		String lastName = request.get("lastName");
 		String roleIdStr = request.get("roleId");
+		String phone =request.get("phone");
 		String createdBy = request.get("createdBy");
 
 		if (firstName == null || email == null || roleIdStr == null) {
@@ -283,6 +293,7 @@ public class AuthController {
 		user.setFirstName(firstName);
 		user.setLastName(lastName);
 		user.setRole(role);
+		user.setPhone(phone);
 		user.setRcreationTime(LocalDateTime.now());
 		user.setRcreationUser(createdBy != null ? createdBy : "system");
 		user.setDelflg("N");
@@ -312,7 +323,7 @@ public class AuthController {
 		String password = request.get("password");
 		String roleIdStr = request.get("roleId");
 		String createdBy = request.get("createdBy");
-		String phoneNumber = request.get("phoneNumber");
+		String phone = request.get("phone");
 
 		if (firstName == null || email == null || roleIdStr == null || password == null) {
 			return ResponseEntity.badRequest()
@@ -344,12 +355,11 @@ public class AuthController {
 		user.setLastName(lastName);
 		user.setPasswordHash(BCrypt.withDefaults().hashToString(12, password.toCharArray()));
 		user.setRole(role);
+		user.setPhone(phone);
 		user.setRcreationTime(LocalDateTime.now());
 		user.setRcreationUser(createdBy != null ? createdBy : "system");
 		user.setDelflg("N");
 		user.setActive(true);
-		user.setPhone(phoneNumber);
-
 		long count = userRepository.count() + 1;
 		String userId = String.format("USR%03d", count);
 		user.setUserId(userId);
@@ -361,9 +371,82 @@ public class AuthController {
 		return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Account created successfully", data));
 	}
 
+//		@PostMapping("/forget-password")
+//		public ResponseEntity<ApiResponse<String>> forgetPassword(@RequestBody Map<String, String> request) {
+//			String identifier = request.get("userId");
+//	
+//			if (identifier == null) {
+//				return ResponseEntity.badRequest()
+//						.body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Identifier is required"));
+//			}
+//	
+//			User user = userRepository.findByEmail(identifier);
+//			if (user == null) {
+//				user = userRepository.findByUserId(identifier);
+//			}
+//	
+//			if (user == null || "Y".equalsIgnoreCase(user.getDelflg())) {
+//				return ResponseEntity.badRequest()
+//						.body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "User not found or deleted"));
+//			}
+//	
+//			String otp = String.format("%06d", (int) (Math.random() * 1000000));
+//			Otp otpEntity = new Otp();
+//			otpEntity.setEmail(user.getEmail());
+//			otpEntity.setOtp(otp);
+//			otpEntity.setExpiryDate(LocalDateTime.now().plusMinutes(10));
+//			otpRepository.save(otpEntity);
+//	
+//			SimpleMailMessage message = new SimpleMailMessage();
+//			message.setTo(user.getEmail());
+//			message.setSubject("Password Reset OTP");
+//			message.setText("Your OTP for password reset is: " + otp + "\nValid for 10 minutes.");
+//			mailSender.send(message);
+//	
+//			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "OTP sent to registered email", null));
+//		}
+//	
+//		@PostMapping("/reset-password")
+//		public ResponseEntity<ApiResponse<String>> resetPassword(@RequestBody Map<String, String> request) {
+//			String email = request.get("email");
+//			String otp = request.get("otp");
+//			String newPassword = request.get("newPassword");
+//	
+//			if (email == null || otp == null || newPassword == null) {
+//				return ResponseEntity.badRequest().body(
+//						new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Email, OTP, and new password are required"));
+//			}
+//	
+//			Optional<Otp> otpOptional = otpRepository.findById(email);
+//			if (otpOptional.isEmpty() || otpOptional.get().isExpired()) {
+//				return ResponseEntity.badRequest()
+//						.body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Invalid or expired OTP"));
+//			}
+//	
+//			Otp otpEntity = otpOptional.get();
+//			if (!otpEntity.getOtp().equals(otp)) {
+//				return ResponseEntity.badRequest().body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Invalid OTP"));
+//			}
+//	
+//			User user = userRepository.findByEmail(email);
+//			if (user == null) {
+//				return ResponseEntity.badRequest()
+//						.body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "User not found"));
+//			}
+//	
+//			user.setPasswordHash(BCrypt.withDefaults().hashToString(12, newPassword.toCharArray()));
+//			userRepository.save(user);
+//	
+//			otpRepository.deleteById(email);
+//			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Password reset successful", null));
+//		}
+	
+	
+	//hardcode OTP
+	
 	@PostMapping("/forget-password")
 	public ResponseEntity<ApiResponse<String>> forgetPassword(@RequestBody Map<String, String> request) {
-		String identifier = request.get("identifier");
+		String identifier = request.get("userId");
 
 		if (identifier == null) {
 			return ResponseEntity.badRequest()
@@ -380,18 +463,21 @@ public class AuthController {
 					.body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "User not found or deleted"));
 		}
 
-		String otp = String.format("%06d", (int) (Math.random() * 1000000));
+		// Hardcoded OTP for testing
+		String otp = "123456"; // <-- Hardcoded OTP instead of random
+
 		Otp otpEntity = new Otp();
 		otpEntity.setEmail(user.getEmail());
 		otpEntity.setOtp(otp);
 		otpEntity.setExpiryDate(LocalDateTime.now().plusMinutes(10));
 		otpRepository.save(otpEntity);
 
-		SimpleMailMessage message = new SimpleMailMessage();
-		message.setTo(user.getEmail());
-		message.setSubject("Password Reset OTP");
-		message.setText("Your OTP for password reset is: " + otp + "\nValid for 10 minutes.");
-		mailSender.send(message);
+		// Email notification
+//		SimpleMailMessage message = new SimpleMailMessage();
+//		message.setTo(user.getEmail());
+//		message.setSubject("Password Reset OTP");
+//		message.setText("Your OTP for password reset is: " + otp + "\nValid for 10 minutes.");
+//		mailSender.send(message);
 
 		return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "OTP sent to registered email", null));
 	}
@@ -414,8 +500,11 @@ public class AuthController {
 		}
 
 		Otp otpEntity = otpOptional.get();
-		if (!otpEntity.getOtp().equals(otp)) {
-			return ResponseEntity.badRequest().body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Invalid OTP"));
+
+		// Compare with hardcoded OTP
+		if (!otpEntity.getOtp().equals("123456")) { // <-- Hardcoded OTP comparison
+			return ResponseEntity.badRequest()
+					.body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Invalid OTP"));
 		}
 
 		User user = userRepository.findByEmail(email);
@@ -428,8 +517,10 @@ public class AuthController {
 		userRepository.save(user);
 
 		otpRepository.deleteById(email);
+
 		return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Password reset successful", null));
 	}
+
 
 	@PostMapping("/set-password")
 	public ResponseEntity<ApiResponse<String>> setPassword(@RequestBody Map<String, String> request) {
@@ -592,7 +683,6 @@ public class AuthController {
 	}
 
 	
-
 	@PostMapping("/add_appdetails")
 	public ResponseEntity<ApiResponse<Map<String, Object>>> applicationdetails(
 			@RequestBody ApplicationDetail applicationdetails) {
@@ -618,5 +708,52 @@ public class AuthController {
 					HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to save application details: " + e.getMessage()));
 		}
 	}
+	
+	
+	@PostMapping("/savePermissions")
+	public ResponseEntity<ApiResponse<String>> savePermissions(@RequestBody List<RoleMenuPermission> permissions) {
+	    for (RoleMenuPermission permission : permissions) {
+	        permission.setUpdtTime(java.time.LocalDateTime.now());
+	        permissionRepository.save(permission);
+	    }
+
+	    return ResponseEntity.ok(new ApiResponse<>(200, "Permissions saved successfully", null));
+	}
+
+	@GetMapping("/getPermissionsWithMenuName/{roleId}")
+	public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getPermissionsWithMenuName(@PathVariable Long roleId) {
+	    List<Map<String, Object>> permissions = permissionRepository.getPermissionsWithMenuName(roleId);
+	    return ResponseEntity.ok(new ApiResponse<>(200, "Permissions fetched successfully", permissions));
+	}
+
+    @PostMapping("/save-parent")
+    public ResponseEntity<ApiResponse<Menu>> saveParentMenu(@RequestBody Map<String, String> request) {
+        String menuName = request.get("menuName");
+        String url = request.get("url");
+        String icon = request.get("icon");
+
+        if (menuName == null || url == null) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse<>(400, "Menu name and URL are required", null));
+        }
+
+        Menu menu = new Menu();
+        menu.setMenuName(menuName);
+        menu.setUrl(url);
+        menu.setIcon(icon);
+        menu.setDelflg("N");
+        menu.setParent(null); // it's a parent menu
+
+        Menu saved = menuRepository.save(menu);
+
+        return ResponseEntity.ok(new ApiResponse<>(200, "Parent menu saved successfully", saved));
+    }
+    
+    @GetMapping("/all-menus")
+    public ResponseEntity<ApiResponse<List<Menu>>> getAllMenus() {
+        List<Menu> menus = menuRepository.findAll();
+        return ResponseEntity.ok( new ApiResponse<>(200,"",menus));
+    }
+
 
 }
