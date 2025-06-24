@@ -1,7 +1,9 @@
 package com.wssl.los.controller;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -806,5 +808,36 @@ public class AuthController {
             return ResponseEntity.status(404).body(new ApiResponse<>(404, "Loan type not found.", null));
         }
     }
+    @GetMapping("/getMenusWithPermissions/{roleId}")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getMenusWithPermissions(@PathVariable Long roleId) {
+        List<Menu> allMenus = menuRepository.findAll();
+        List<Map<String, Object>> rolePermissions = permissionRepository.getPermissionsWithMenuName(roleId);
+
+        Map<Long, Map<String, Object>> permissionMap = new HashMap<>();
+        for (Map<String, Object> perm : rolePermissions) {
+            Long menuId = ((Number) perm.get("menuId")).longValue();
+            permissionMap.put(menuId, perm);
+        }
+
+        List<Map<String, Object>> combinedList = new ArrayList<>();
+
+        for (Menu menu : allMenus) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("menuId", menu.getId());
+            result.put("menuName", menu.getMenuName());
+            result.put("url", menu.getUrl());
+            result.put("icon", menu.getIcon());
+
+            Map<String, Object> perms = permissionMap.get(menu.getId());
+            result.put("canRead", perms != null && Boolean.TRUE.equals(perms.get("canRead")));
+            result.put("canWrite", perms != null && Boolean.TRUE.equals(perms.get("canWrite")));
+            result.put("canAll", perms != null && Boolean.TRUE.equals(perms.get("canAll")));
+
+            combinedList.add(result);
+        }
+
+        return ResponseEntity.ok(new ApiResponse<>(200, "Menus with permissions fetched successfully", combinedList));
+    }
+
 
 }
