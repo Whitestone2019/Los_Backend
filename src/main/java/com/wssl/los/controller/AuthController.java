@@ -29,6 +29,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.wssl.los.model.ApiResponse;
 import com.wssl.los.model.ApplicationDetail;
+import com.wssl.los.model.ApprovalProcessFlow;
+import com.wssl.los.model.LoanType;
 import com.wssl.los.model.Menu;
 import com.wssl.los.model.Organization;
 import com.wssl.los.model.Otp;
@@ -36,6 +38,8 @@ import com.wssl.los.model.Role;
 import com.wssl.los.model.RoleMenuPermission;
 import com.wssl.los.model.User;
 import com.wssl.los.repository.ApplicationDetailRepository;
+import com.wssl.los.repository.ApprovalProcessFlowRepository;
+import com.wssl.los.repository.LoanTypeRepository;
 import com.wssl.los.repository.MenuRepository;
 import com.wssl.los.repository.OrganizationRepository;
 import com.wssl.los.repository.OtpRepository;
@@ -68,14 +72,20 @@ public class AuthController {
 	private JavaMailSender mailSender;
 	@Autowired
 	private RefreshTokenService refreshTokenService;
-	
+
 	@Autowired
-    private RoleMenuPermissionRepository permissionRepository;
+	private RoleMenuPermissionRepository permissionRepository;
 	@Autowired
-    private MenuRepository menuRepository;
-	
+	private MenuRepository menuRepository;
+
 	@Autowired
 	private ApplicationDetailRepository applicationDetailRepository;
+	
+	@Autowired
+	private LoanTypeRepository loanTypeRepository;
+
+	@Autowired
+	private ApprovalProcessFlowRepository flowRepository;
 
 	private AtomicLong userSequence = new AtomicLong(1);
 	private Map<String, String> otpStore = new HashMap<>();
@@ -86,7 +96,7 @@ public class AuthController {
 		return String.format("%06d", 100000 + random.nextInt(900000));
 	}
 
-private void sendOtpEmail(String email, String otp) {
+	private void sendOtpEmail(String email, String otp) {
 		try {
 			MimeMessage message = mailSender.createMimeMessage();
 			MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
@@ -102,14 +112,14 @@ private void sendOtpEmail(String email, String otp) {
 		}
 	}
 
-private void sendPasswordSetupEmail(String email, String token) {
+	private void sendPasswordSetupEmail(String email, String token) {
 		SimpleMailMessage message = new SimpleMailMessage();
 		message.setTo(email);
 		message.setSubject("Set Your Password");
-		message.setText("Set your password: http://152.67.189.231:8844/reset_password?email=" + email + "&token=" + token
-				+ "\nValid for 24 hours.");
+		message.setText("Set your password: http://152.67.189.231:8844/reset_password?email=" + email + "&token="
+				+ token + "\nValid for 24 hours.");
 		mailSender.send(message);
-}
+	}
 
 //    @PostMapping("/send-otp")
 //    public ResponseEntity<ApiResponse<Map<String, String>>> login(@RequestBody Map<String, String> request) {
@@ -178,7 +188,7 @@ private void sendPasswordSetupEmail(String email, String token) {
 		otp.setExpiryDate(expiry);
 		otpRepository.save(otp);
 
-		//sendOtpEmail(user.getEmail(), otpValue); // still sends the hardcoded OTP
+		// sendOtpEmail(user.getEmail(), otpValue); // still sends the hardcoded OTP
 
 		Map<String, String> data = new HashMap<>();
 		data.put("email", user.getEmail());
@@ -261,7 +271,7 @@ private void sendPasswordSetupEmail(String email, String token) {
 		String firstName = request.get("firstName");
 		String lastName = request.get("lastName");
 		String roleIdStr = request.get("roleId");
-		String phone =request.get("phone");
+		String phone = request.get("phone");
 		String createdBy = request.get("createdBy");
 
 		if (firstName == null || email == null || roleIdStr == null) {
@@ -440,10 +450,9 @@ private void sendPasswordSetupEmail(String email, String token) {
 //			otpRepository.deleteById(email);
 //			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Password reset successful", null));
 //		}
-	
-	
-	//hardcode OTP
-	
+
+	// hardcode OTP
+
 	@PostMapping("/forget-password")
 	public ResponseEntity<ApiResponse<String>> forgetPassword(@RequestBody Map<String, String> request) {
 		String identifier = request.get("userId");
@@ -503,8 +512,7 @@ private void sendPasswordSetupEmail(String email, String token) {
 
 		// Compare with hardcoded OTP
 		if (!otpEntity.getOtp().equals("123456")) { // <-- Hardcoded OTP comparison
-			return ResponseEntity.badRequest()
-					.body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Invalid OTP"));
+			return ResponseEntity.badRequest().body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Invalid OTP"));
 		}
 
 		User user = userRepository.findByEmail(email);
@@ -520,7 +528,6 @@ private void sendPasswordSetupEmail(String email, String token) {
 
 		return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Password reset successful", null));
 	}
-
 
 	@PostMapping("/set-password")
 	public ResponseEntity<ApiResponse<String>> setPassword(@RequestBody Map<String, String> request) {
@@ -682,7 +689,6 @@ private void sendPasswordSetupEmail(String email, String token) {
 		return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "User retrieved successfully", user));
 	}
 
-	
 	@PostMapping("/add_appdetails")
 	public ResponseEntity<ApiResponse<Map<String, Object>>> applicationdetails(
 			@RequestBody ApplicationDetail applicationdetails) {
@@ -708,52 +714,97 @@ private void sendPasswordSetupEmail(String email, String token) {
 					HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to save application details: " + e.getMessage()));
 		}
 	}
-	
-	
+
 	@PostMapping("/savePermissions")
 	public ResponseEntity<ApiResponse<String>> savePermissions(@RequestBody List<RoleMenuPermission> permissions) {
-	    for (RoleMenuPermission permission : permissions) {
-	        permission.setUpdtTime(java.time.LocalDateTime.now());
-	        permissionRepository.save(permission);
-	    }
+		for (RoleMenuPermission permission : permissions) {
+			permission.setUpdtTime(java.time.LocalDateTime.now());
+			permissionRepository.save(permission);
+		}
 
-	    return ResponseEntity.ok(new ApiResponse<>(200, "Permissions saved successfully", null));
+		return ResponseEntity.ok(new ApiResponse<>(200, "Permissions saved successfully", null));
 	}
 
 	@GetMapping("/getPermissionsWithMenuName/{roleId}")
-	public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getPermissionsWithMenuName(@PathVariable Long roleId) {
-	    List<Map<String, Object>> permissions = permissionRepository.getPermissionsWithMenuName(roleId);
-	    return ResponseEntity.ok(new ApiResponse<>(200, "Permissions fetched successfully", permissions));
+	public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getPermissionsWithMenuName(
+			@PathVariable Long roleId) {
+		List<Map<String, Object>> permissions = permissionRepository.getPermissionsWithMenuName(roleId);
+		return ResponseEntity.ok(new ApiResponse<>(200, "Permissions fetched successfully", permissions));
 	}
 
-    @PostMapping("/save-parent")
-    public ResponseEntity<ApiResponse<Menu>> saveParentMenu(@RequestBody Map<String, String> request) {
-        String menuName = request.get("menuName");
-        String url = request.get("url");
-        String icon = request.get("icon");
+	@PostMapping("/save-parent")
+	public ResponseEntity<ApiResponse<Menu>> saveParentMenu(@RequestBody Map<String, String> request) {
+		String menuName = request.get("menuName");
+		String url = request.get("url");
+		String icon = request.get("icon");
 
-        if (menuName == null || url == null) {
-            return ResponseEntity.badRequest()
-                    .body(new ApiResponse<>(400, "Menu name and URL are required", null));
+		if (menuName == null || url == null) {
+			return ResponseEntity.badRequest().body(new ApiResponse<>(400, "Menu name and URL are required", null));
+		}
+
+		Menu menu = new Menu();
+		menu.setMenuName(menuName);
+		menu.setUrl(url);
+		menu.setIcon(icon);
+		menu.setDelflg("N");
+		menu.setParent(null); // it's a parent menu
+
+		Menu saved = menuRepository.save(menu);
+
+		return ResponseEntity.ok(new ApiResponse<>(200, "Parent menu saved successfully", saved));
+	}
+
+	@GetMapping("/all-menus")
+	public ResponseEntity<ApiResponse<List<Menu>>> getAllMenus() {
+		List<Menu> menus = menuRepository.findAll();
+		return ResponseEntity.ok(new ApiResponse<>(200, "", menus));
+	}
+	
+	   // Save Loan Type
+    @PostMapping("/loan-type/save")
+    public ResponseEntity<ApiResponse<String>> saveLoanType(@RequestBody LoanType loanType) {
+        Optional<LoanType> existing = loanTypeRepository.findByLoanType(loanType.getLoanType());
+        if (existing.isPresent()) {
+            LoanType update = existing.get();
+            update.setDescription(loanType.getDescription());
+            loanTypeRepository.save(update);
+            return ResponseEntity.ok(new ApiResponse<>(200, "Loan type updated successfully", null));
+        } else {
+            loanTypeRepository.save(loanType);
+            return ResponseEntity.ok(new ApiResponse<>(200, "Loan type saved successfully", null));
         }
+    }
 
-        Menu menu = new Menu();
-        menu.setMenuName(menuName);
-        menu.setUrl(url);
-        menu.setIcon(icon);
-        menu.setDelflg("N");
-        menu.setParent(null); // it's a parent menu
-
-        Menu saved = menuRepository.save(menu);
-
-        return ResponseEntity.ok(new ApiResponse<>(200, "Parent menu saved successfully", saved));
+    // Get All Loan Types
+    @GetMapping("/loan-types")
+    public ResponseEntity<ApiResponse<List<LoanType>>> getAllLoanTypes() {
+        return ResponseEntity.ok(new ApiResponse<>(200, "Loan types fetched", loanTypeRepository.findAll()));
     }
     
-    @GetMapping("/all-menus")
-    public ResponseEntity<ApiResponse<List<Menu>>> getAllMenus() {
-        List<Menu> menus = menuRepository.findAll();
-        return ResponseEntity.ok( new ApiResponse<>(200,"",menus));
+	@PostMapping("/workflow-save")
+    public ResponseEntity<ApiResponse<String>> saveFlow(@RequestBody ApprovalProcessFlow flow) {
+        Optional<ApprovalProcessFlow> existing = flowRepository.findByLoanType(flow.getLoanType());
+
+        if (existing.isPresent()) {
+            ApprovalProcessFlow updated = existing.get();
+            updated.setSteps(flow.getSteps());
+            flowRepository.save(updated);
+            return ResponseEntity.ok(new ApiResponse<>(200, "Approval flow updated successfully.", null));
+        } else {
+            flowRepository.save(flow);
+            return ResponseEntity.ok(new ApiResponse<>(200, "Approval flow saved successfully.", null));
+        }
     }
 
+    @GetMapping("/workflow-get/{loanType}")
+    public ResponseEntity<ApiResponse<ApprovalProcessFlow>> getFlow(@PathVariable String loanType) {
+        Optional<ApprovalProcessFlow> flowOpt = flowRepository.findByLoanType(loanType);
+        
+        if (flowOpt.isPresent()) {
+            return ResponseEntity.ok(new ApiResponse<>(200, "Approval flow fetched", flowOpt.get()));
+        } else {
+            return ResponseEntity.status(404).body(new ApiResponse<>(404, "Loan type not found.", null));
+        }
+    }
 
 }
