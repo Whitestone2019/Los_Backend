@@ -10,8 +10,10 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mail.SimpleMailMessage;
@@ -808,20 +810,33 @@ public class AuthController {
             return ResponseEntity.status(404).body(new ApiResponse<>(404, "Loan type not found.", null));
         }
     }
+    
     @GetMapping("/getMenusWithPermissions/{roleId}")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getMenusWithPermissions(@PathVariable Long roleId) {
-        List<Menu> allMenus = menuRepository.findAll();
+        // Step 1: Fetch all menus, ordered by ID
+        List<Menu> allMenus = menuRepository.findAll(Sort.by("id"));
+
+        // Step 2: Get role-based permissions
         List<Map<String, Object>> rolePermissions = permissionRepository.getPermissionsWithMenuName(roleId);
 
+        // ✅ Fix: Define permissionMap here
         Map<Long, Map<String, Object>> permissionMap = new HashMap<>();
         for (Map<String, Object> perm : rolePermissions) {
             Long menuId = ((Number) perm.get("menuId")).longValue();
             permissionMap.put(menuId, perm);
         }
 
+        // Step 3: Build submenus map (grouped by parent ID)
+        Map<Long, List<Menu>> subMenuMap = allMenus.stream()
+            .filter(menu -> menu.getParent() != null)
+            .collect(Collectors.groupingBy(menu -> menu.getParent().getId()));
+
+        // Step 4: Process only top-level menus (where parent is null)
         List<Map<String, Object>> combinedList = new ArrayList<>();
 
         for (Menu menu : allMenus) {
+            if (menu.getParent() != null) continue; // skip submenus at this point
+
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("menuId", menu.getId());
             result.put("menuName", menu.getMenuName());
@@ -833,11 +848,32 @@ public class AuthController {
             result.put("canWrite", perms != null && Boolean.TRUE.equals(perms.get("canWrite")));
             result.put("canAll", perms != null && Boolean.TRUE.equals(perms.get("canAll")));
 
+            // Step 5: Add submenus if present
+            List<Map<String, Object>> children = new ArrayList<>();
+            if (subMenuMap.containsKey(menu.getId())) {
+                for (Menu sub : subMenuMap.get(menu.getId())) {
+                    Map<String, Object> child = new LinkedHashMap<>();
+                    child.put("menuId", sub.getId());
+                    child.put("menuName", sub.getMenuName());
+                    child.put("url", sub.getUrl());
+                    child.put("icon", sub.getIcon());
+
+                    Map<String, Object> subPerms = permissionMap.get(sub.getId());
+                    child.put("canRead", subPerms != null && Boolean.TRUE.equals(subPerms.get("canRead")));
+                    child.put("canWrite", subPerms != null && Boolean.TRUE.equals(subPerms.get("canWrite")));
+                    child.put("canAll", subPerms != null && Boolean.TRUE.equals(subPerms.get("canAll")));
+
+                    children.add(child);
+                }
+            }
+            result.put("subMenus", children);
+
             combinedList.add(result);
         }
 
         return ResponseEntity.ok(new ApiResponse<>(200, "Menus with permissions fetched successfully", combinedList));
     }
+
 
 
 }
