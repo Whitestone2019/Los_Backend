@@ -238,7 +238,8 @@ public class AuthController {
 		data.put("refreshToken", refreshToken);
 		data.put("userId", user.getUserId());
 		data.put("role", user.getRole() != null ? user.getRole().getRoleName() : null);
-
+		data.put("roleId", user.getRole().getId());
+		
 		return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "OTP verified successfully", data));
 	}
 
