@@ -84,7 +84,7 @@ public class AuthController {
 
 	@Autowired
 	private ApplicationDetailRepository applicationDetailRepository;
-	
+
 	@Autowired
 	private LoanTypeRepository loanTypeRepository;
 
@@ -693,32 +693,6 @@ public class AuthController {
 		return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "User retrieved successfully", user));
 	}
 
-	@PostMapping("/add_appdetails")
-	public ResponseEntity<ApiResponse<Map<String, Object>>> applicationdetails(
-			@RequestBody ApplicationDetail applicationdetails) {
-		try {
-			// Save application details to DB
-			ApplicationDetail savedDetails = applicationDetailRepository.save(applicationdetails);
-
-			// Generate application number
-			String applicationNumber = savedDetails.getUserId() + "-" + savedDetails.getId();
-
-			// Prepare response data
-			Map<String, Object> responseData = new HashMap<>();
-			responseData.put("id", savedDetails.getId());
-			responseData.put("userId", savedDetails.getUserId());
-			responseData.put("applicationNumber", applicationNumber);
-
-			return ResponseEntity.ok(
-					new ApiResponse<>(HttpStatus.OK.value(), "Application details saved successfully", responseData));
-		} catch (Exception e) {
-			e.printStackTrace(); // Log the error (optional: use logger instead)
-
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<>(
-					HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to save application details: " + e.getMessage()));
-		}
-	}
-
 	@PostMapping("/savePermissions")
 	public ResponseEntity<ApiResponse<String>> savePermissions(@RequestBody List<RoleMenuPermission> permissions) {
 		for (RoleMenuPermission permission : permissions) {
@@ -763,117 +737,284 @@ public class AuthController {
 		List<Menu> menus = menuRepository.findAll();
 		return ResponseEntity.ok(new ApiResponse<>(200, "", menus));
 	}
-	
-	   // Save Loan Type
-    @PostMapping("/loan-type/save")
-    public ResponseEntity<ApiResponse<String>> saveLoanType(@RequestBody LoanType loanType) {
-        Optional<LoanType> existing = loanTypeRepository.findByLoanType(loanType.getLoanType());
-        if (existing.isPresent()) {
-            LoanType update = existing.get();
-            update.setDescription(loanType.getDescription());
-            loanTypeRepository.save(update);
-            return ResponseEntity.ok(new ApiResponse<>(200, "Loan type updated successfully", null));
-        } else {
-            loanTypeRepository.save(loanType);
-            return ResponseEntity.ok(new ApiResponse<>(200, "Loan type saved successfully", null));
-        }
-    }
 
-    // Get All Loan Types
-    @GetMapping("/loan-types")
-    public ResponseEntity<ApiResponse<List<LoanType>>> getAllLoanTypes() {
-        return ResponseEntity.ok(new ApiResponse<>(200, "Loan types fetched", loanTypeRepository.findAll()));
-    }
-    
+	// Save Loan Type
+	@PostMapping("/loan-type/save")
+	public ResponseEntity<ApiResponse<String>> saveLoanType(@RequestBody LoanType loanType) {
+		Optional<LoanType> existing = loanTypeRepository.findByLoanType(loanType.getLoanType());
+		if (existing.isPresent()) {
+			LoanType update = existing.get();
+			update.setDescription(loanType.getDescription());
+			loanTypeRepository.save(update);
+			return ResponseEntity.ok(new ApiResponse<>(200, "Loan type updated successfully", null));
+		} else {
+			loanTypeRepository.save(loanType);
+			return ResponseEntity.ok(new ApiResponse<>(200, "Loan type saved successfully", null));
+		}
+	}
+
+	// Get All Loan Types
+	@GetMapping("/loan-types")
+	public ResponseEntity<ApiResponse<List<LoanType>>> getAllLoanTypes() {
+		return ResponseEntity.ok(new ApiResponse<>(200, "Loan types fetched", loanTypeRepository.findAll()));
+	}
+
 	@PostMapping("/workflow-save")
-    public ResponseEntity<ApiResponse<String>> saveFlow(@RequestBody ApprovalProcessFlow flow) {
-        Optional<ApprovalProcessFlow> existing = flowRepository.findByLoanType(flow.getLoanType());
+	public ResponseEntity<ApiResponse<String>> saveFlow(@RequestBody ApprovalProcessFlow flow) {
+		Optional<ApprovalProcessFlow> existing = flowRepository.findByLoanType(flow.getLoanType());
 
-        if (existing.isPresent()) {
-            ApprovalProcessFlow updated = existing.get();
-            updated.setSteps(flow.getSteps());
-            flowRepository.save(updated);
-            return ResponseEntity.ok(new ApiResponse<>(200, "Approval flow updated successfully.", null));
-        } else {
-            flowRepository.save(flow);
-            return ResponseEntity.ok(new ApiResponse<>(200, "Approval flow saved successfully.", null));
-        }
-    }
+		if (existing.isPresent()) {
+			ApprovalProcessFlow updated = existing.get();
+			updated.setSteps(flow.getSteps());
+			flowRepository.save(updated);
+			return ResponseEntity.ok(new ApiResponse<>(200, "Approval flow updated successfully.", null));
+		} else {
+			flowRepository.save(flow);
+			return ResponseEntity.ok(new ApiResponse<>(200, "Approval flow saved successfully.", null));
+		}
+	}
 
-    @GetMapping("/workflow-get/{loanType}")
-    public ResponseEntity<ApiResponse<ApprovalProcessFlow>> getFlow(@PathVariable String loanType) {
-        Optional<ApprovalProcessFlow> flowOpt = flowRepository.findByLoanType(loanType);
-        
-        if (flowOpt.isPresent()) {
-            return ResponseEntity.ok(new ApiResponse<>(200, "Approval flow fetched", flowOpt.get()));
-        } else {
-            return ResponseEntity.status(404).body(new ApiResponse<>(404, "Loan type not found.", null));
-        }
-    }
-    
-    @GetMapping("/getMenusWithPermissions/{roleId}")
-    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getMenusWithPermissions(@PathVariable Long roleId) {
-        // Step 1: Fetch all menus, ordered by ID
-        List<Menu> allMenus = menuRepository.findAll(Sort.by("id"));
+	@GetMapping("/workflow-get/{loanType}")
+	public ResponseEntity<ApiResponse<ApprovalProcessFlow>> getFlow(@PathVariable String loanType) {
+		Optional<ApprovalProcessFlow> flowOpt = flowRepository.findByLoanType(loanType);
 
-        // Step 2: Get role-based permissions
-        List<Map<String, Object>> rolePermissions = permissionRepository.getPermissionsWithMenuName(roleId);
+		if (flowOpt.isPresent()) {
+			return ResponseEntity.ok(new ApiResponse<>(200, "Approval flow fetched", flowOpt.get()));
+		} else {
+			return ResponseEntity.status(404).body(new ApiResponse<>(404, "Loan type not found.", null));
+		}
+	}
 
-        // ✅ Fix: Define permissionMap here
-        Map<Long, Map<String, Object>> permissionMap = new HashMap<>();
-        for (Map<String, Object> perm : rolePermissions) {
-            Long menuId = ((Number) perm.get("menuId")).longValue();
-            permissionMap.put(menuId, perm);
-        }
+	@GetMapping("/getMenusWithPermissions/{roleId}")
+	public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getMenusWithPermissions(@PathVariable Long roleId) {
+		// Step 1: Fetch all menus, ordered by ID
+		List<Menu> allMenus = menuRepository.findAll(Sort.by("id"));
 
-        // Step 3: Build submenus map (grouped by parent ID)
-        Map<Long, List<Menu>> subMenuMap = allMenus.stream()
-            .filter(menu -> menu.getParent() != null)
-            .collect(Collectors.groupingBy(menu -> menu.getParent().getId()));
+		// Step 2: Get role-based permissions
+		List<Map<String, Object>> rolePermissions = permissionRepository.getPermissionsWithMenuName(roleId);
 
-        // Step 4: Process only top-level menus (where parent is null)
-        List<Map<String, Object>> combinedList = new ArrayList<>();
+		// ✅ Fix: Define permissionMap here
+		Map<Long, Map<String, Object>> permissionMap = new HashMap<>();
+		for (Map<String, Object> perm : rolePermissions) {
+			Long menuId = ((Number) perm.get("menuId")).longValue();
+			permissionMap.put(menuId, perm);
+		}
 
-        for (Menu menu : allMenus) {
-            if (menu.getParent() != null) continue; // skip submenus at this point
+		// Step 3: Build submenus map (grouped by parent ID)
+		Map<Long, List<Menu>> subMenuMap = allMenus.stream().filter(menu -> menu.getParent() != null)
+				.collect(Collectors.groupingBy(menu -> menu.getParent().getId()));
 
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("menuId", menu.getId());
-            result.put("menuName", menu.getMenuName());
-            result.put("url", menu.getUrl());
-            result.put("icon", menu.getIcon());
+		// Step 4: Process only top-level menus (where parent is null)
+		List<Map<String, Object>> combinedList = new ArrayList<>();
 
-            Map<String, Object> perms = permissionMap.get(menu.getId());
-            result.put("canRead", perms != null && Boolean.TRUE.equals(perms.get("canRead")));
-            result.put("canWrite", perms != null && Boolean.TRUE.equals(perms.get("canWrite")));
-            result.put("canAll", perms != null && Boolean.TRUE.equals(perms.get("canAll")));
+		for (Menu menu : allMenus) {
+			if (menu.getParent() != null)
+				continue; // skip submenus at this point
 
-            // Step 5: Add submenus if present
-            List<Map<String, Object>> children = new ArrayList<>();
-            if (subMenuMap.containsKey(menu.getId())) {
-                for (Menu sub : subMenuMap.get(menu.getId())) {
-                    Map<String, Object> child = new LinkedHashMap<>();
-                    child.put("menuId", sub.getId());
-                    child.put("menuName", sub.getMenuName());
-                    child.put("url", sub.getUrl());
-                    child.put("icon", sub.getIcon());
+			Map<String, Object> result = new LinkedHashMap<>();
+			result.put("menuId", menu.getId());
+			result.put("menuName", menu.getMenuName());
+			result.put("url", menu.getUrl());
+			result.put("icon", menu.getIcon());
 
-                    Map<String, Object> subPerms = permissionMap.get(sub.getId());
-                    child.put("canRead", subPerms != null && Boolean.TRUE.equals(subPerms.get("canRead")));
-                    child.put("canWrite", subPerms != null && Boolean.TRUE.equals(subPerms.get("canWrite")));
-                    child.put("canAll", subPerms != null && Boolean.TRUE.equals(subPerms.get("canAll")));
+			Map<String, Object> perms = permissionMap.get(menu.getId());
+			result.put("canRead", perms != null && Boolean.TRUE.equals(perms.get("canRead")));
+			result.put("canWrite", perms != null && Boolean.TRUE.equals(perms.get("canWrite")));
+			result.put("canAll", perms != null && Boolean.TRUE.equals(perms.get("canAll")));
 
-                    children.add(child);
-                }
-            }
-            result.put("subMenus", children);
+			// Step 5: Add submenus if present
+			List<Map<String, Object>> children = new ArrayList<>();
+			if (subMenuMap.containsKey(menu.getId())) {
+				for (Menu sub : subMenuMap.get(menu.getId())) {
+					Map<String, Object> child = new LinkedHashMap<>();
+					child.put("menuId", sub.getId());
+					child.put("menuName", sub.getMenuName());
+					child.put("url", sub.getUrl());
+					child.put("icon", sub.getIcon());
 
-            combinedList.add(result);
-        }
+					Map<String, Object> subPerms = permissionMap.get(sub.getId());
+					child.put("canRead", subPerms != null && Boolean.TRUE.equals(subPerms.get("canRead")));
+					child.put("canWrite", subPerms != null && Boolean.TRUE.equals(subPerms.get("canWrite")));
+					child.put("canAll", subPerms != null && Boolean.TRUE.equals(subPerms.get("canAll")));
 
-        return ResponseEntity.ok(new ApiResponse<>(200, "Menus with permissions fetched successfully", combinedList));
-    }
+					children.add(child);
+				}
+			}
+			result.put("subMenus", children);
 
+			combinedList.add(result);
+		}
 
+		return ResponseEntity.ok(new ApiResponse<>(200, "Menus with permissions fetched successfully", combinedList));
+	}
+
+	@PostMapping("/add_appdetails")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> applicationdetails(
+			@RequestBody ApplicationDetail applicationdetails) {
+
+		applicationdetails.setDelFlag("N");
+		applicationdetails.setCreatedDate(LocalDateTime.now());
+
+		try {
+
+			ApplicationDetail savedDetails = applicationDetailRepository.save(applicationdetails);
+
+			String applicationNumber = savedDetails.getUserid() + "-" + savedDetails.getId();
+
+			savedDetails.setApplicationnumber(applicationNumber);
+			applicationDetailRepository.save(savedDetails); // Save updated applicationNumber
+
+			// Step 4: Prepare response
+			Map<String, Object> responseData = new HashMap<>();
+			responseData.put("id", savedDetails.getId());
+			responseData.put("userId", savedDetails.getUserid());
+			responseData.put("applicationNumber", applicationNumber);
+
+			return ResponseEntity.ok(
+					new ApiResponse<>(HttpStatus.OK.value(), "Application details saved successfully", responseData));
+		} catch (Exception e) {
+			e.printStackTrace();
+
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<>(
+					HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to save application details: " + e.getMessage()));
+		}
+	}
+
+	@GetMapping("/get_allApplicationDetails")
+	public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getAllApplicationDetails() {
+		try {
+			List<ApplicationDetail> applications = applicationDetailRepository.findAll();
+
+			List<Map<String, Object>> responseList = applications.stream()
+					.filter(app -> !"Y".equalsIgnoreCase(app.getDelFlag())).map(app -> {
+						Map<String, Object> responseMap = new LinkedHashMap<>();
+
+						// Application data
+						Map<String, Object> applicationData = new LinkedHashMap<>();
+						applicationData.put("applicationId", app.getId());
+						applicationData.put("applicationNumber", app.getApplicationnumber());
+						applicationData.put("dateOfBirth", app.getDateOfBirth());
+						applicationData.put("monthlyGrossIncome", app.getMonthlyGrossIncome());
+						applicationData.put("ssn", app.getSsn());
+						applicationData.put("confirmSsn", app.getConfirmSsn());
+						applicationData.put("howMuchDoYouNeed", app.getHowMuchDoYouNeed());
+						applicationData.put("homeAddress", app.getHomeAddress());
+						applicationData.put("homeAddress2", app.getHomeAddress2());
+						applicationData.put("zipCode", app.getZipCode());
+						applicationData.put("city", app.getCity());
+						applicationData.put("state", app.getState());
+						applicationData.put("isHomeOwner", app.getIsHomeOwner());
+						applicationData.put("createdBy", app.getCreatedBy());
+						applicationData.put("createdDate", app.getCreatedDate());
+						applicationData.put("updatedBy", app.getUpdatedBy());
+						applicationData.put("updatedDate", app.getUpdatedDate());
+
+						responseMap.put("applicationDetails", applicationData);
+
+						// User and Role (nested)
+						if (app.getUser() != null) {
+							User user = app.getUser();
+							Map<String, Object> userData = new LinkedHashMap<>();
+							userData.put("userId", user.getUserId());
+							userData.put("firstName", user.getFirstName());
+							userData.put("lastName", user.getLastName());
+							userData.put("email", user.getEmail());
+							userData.put("phone", user.getPhone());
+
+							responseMap.put("userDetails", userData);
+						}
+
+						return responseMap;
+					}).toList();
+
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+					"Application details with user info retrieved successfully", responseList));
+		} catch (Exception e) {
+			e.printStackTrace(); // Optional: use proper logger here
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"Failed to fetch application details: " + e.getMessage(), null));
+		}
+	}
+
+	@GetMapping("/getApplicationDetails/{applicationNumber}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getApplicationByApplicationNumber(
+			@PathVariable String applicationNumber) {
+		try {
+			// Check if application exists
+			ApplicationDetail app = applicationDetailRepository.findByApplicationNumberAndDelFlag(applicationNumber,
+					"N");
+
+			if (app == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application details not found"));
+			}
+
+			Map<String, Object> responseData = new LinkedHashMap<>();
+
+			// Application block
+			Map<String, Object> applicationData = new LinkedHashMap<>();
+			applicationData.put("applicationId", app.getId());
+			applicationData.put("applicationNumber", app.getApplicationnumber());
+			applicationData.put("dateOfBirth", app.getDateOfBirth());
+			applicationData.put("monthlyGrossIncome", app.getMonthlyGrossIncome());
+			applicationData.put("ssn", app.getSsn());
+			applicationData.put("confirmSsn", app.getConfirmSsn());
+			applicationData.put("howMuchDoYouNeed", app.getHowMuchDoYouNeed());
+			applicationData.put("homeAddress", app.getHomeAddress());
+			applicationData.put("homeAddress2", app.getHomeAddress2());
+			applicationData.put("zipCode", app.getZipCode());
+			applicationData.put("city", app.getCity());
+			applicationData.put("state", app.getState());
+			applicationData.put("isHomeOwner", app.getIsHomeOwner());
+			applicationData.put("createdBy", app.getCreatedBy());
+			applicationData.put("createdDate", app.getCreatedDate());
+			applicationData.put("updatedBy", app.getUpdatedBy());
+			applicationData.put("updatedDate", app.getUpdatedDate());
+
+			responseData.put("applicationDetails", applicationData);
+
+			// User block
+			if (app.getUser() != null) {
+				User user = app.getUser();
+				Map<String, Object> userData = new LinkedHashMap<>();
+				userData.put("userId", user.getUserId());
+				userData.put("firstName", user.getFirstName());
+				userData.put("lastName", user.getLastName());
+				userData.put("email", user.getEmail());
+				userData.put("phone", user.getPhone());
+
+				if (user.getRole() != null) {
+					userData.put("roleId", user.getRole().getId());
+					userData.put("roleName", user.getRole().getRoleName());
+				}
+
+				responseData.put("userDetails", userData);
+			}
+
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+					"Application and user details retrieved successfully", responseData));
+		} catch (Exception e) {
+			e.printStackTrace(); // Optional: replace with logger
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"An error occurred while retrieving application details: " + e.getMessage()));
+		}
+	}
+
+	@GetMapping("/getapplicationCount")
+	public ResponseEntity<ApiResponse<Long>> getApplicationCount() {
+		try {
+			long appCount = applicationDetailRepository.countByDelFlag("N");
+			return ResponseEntity
+					.ok(new ApiResponse<>(HttpStatus.OK.value(), "Application count retrieved successfully", appCount));
+		} catch (Exception e) {
+
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"Failed to retrieve application count: " + e.getMessage(), null));
+		}
+	}
 
 }
