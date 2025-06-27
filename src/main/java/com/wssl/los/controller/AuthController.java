@@ -817,6 +817,7 @@ public class AuthController {
 			result.put("menuName", menu.getMenuName());
 			result.put("url", menu.getUrl());
 			result.put("icon", menu.getIcon());
+			result.put("type", menu.getType());
 
 			Map<String, Object> perms = permissionMap.get(menu.getId());
 			result.put("canRead", perms != null && Boolean.TRUE.equals(perms.get("canRead")));
@@ -845,6 +846,7 @@ public class AuthController {
 			child.put("menuName", sub.getMenuName());
 			child.put("url", sub.getUrl());
 			child.put("icon", sub.getIcon());
+			child.put("type", sub.getType());
 
 			Map<String, Object> subPerms = permissionMap.get(sub.getId());
 			child.put("canRead", subPerms != null && Boolean.TRUE.equals(subPerms.get("canRead")));
