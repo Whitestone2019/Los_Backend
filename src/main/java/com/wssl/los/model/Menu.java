@@ -34,6 +34,9 @@ public class Menu {
 
     @Column(name = "delflg", length = 1)
     private String delflg = "N";
+    
+    @Column(name = "type", length = 20)
+    private String type;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
@@ -83,6 +86,14 @@ public class Menu {
 		this.delflg = delflg;
 	}
 
+	public String getType() {
+		return type;
+	}
+
+	public void setType(String type) {
+		this.type = type;
+	}
+
 	public Menu getParent() {
 		return parent;
 	}
@@ -99,24 +110,34 @@ public class Menu {
 		this.subMenus = subMenus;
 	}
 
-	public Menu(Long id, String menuName, String url, String icon, String delflg, Menu parent, List<Menu> subMenus) {
+	public Menu(Long id, String menuName, String url, String icon, String delflg, String type, Menu parent,
+			List<Menu> subMenus) {
 		super();
 		this.id = id;
 		this.menuName = menuName;
 		this.url = url;
 		this.icon = icon;
 		this.delflg = delflg;
+		this.type = type;
 		this.parent = parent;
 		this.subMenus = subMenus;
+	}
+
+	@Override
+	public String toString() {
+		return "Menu [id=" + id + ", menuName=" + menuName + ", url=" + url + ", icon=" + icon + ", delflg=" + delflg
+				+ ", type=" + type + ", parent=" + parent + ", subMenus=" + subMenus + ", getId()=" + getId()
+				+ ", getMenuName()=" + getMenuName() + ", getUrl()=" + getUrl() + ", getIcon()=" + getIcon()
+				+ ", getDelflg()=" + getDelflg() + ", getType()=" + getType() + ", getParent()=" + getParent()
+				+ ", getSubMenus()=" + getSubMenus() + ", getClass()=" + getClass() + ", hashCode()=" + hashCode()
+				+ ", toString()=" + super.toString() + "]";
 	}
 
 	public Menu() {
 		super();
 		// TODO Auto-generated constructor stub
 	}
-	
-	
 
-    // Add constructors/getters/setters
+	
     
 }
