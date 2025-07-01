@@ -1,7 +1,6 @@
 package com.wssl.los.model;
 import java.time.LocalDateTime;
 import java.util.Date;
- 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -11,12 +10,14 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Temporal;
 import jakarta.persistence.TemporalType;
+import jakarta.persistence.Transient;
 @Entity
 public class ApplicationDetail {
 	@Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-	private String userid;
+	@Transient
+	private String userId;
     @ManyToOne
     @JoinColumn(name = "user_id", referencedColumnName = "user_id")
     private User user;
@@ -39,23 +40,25 @@ public class ApplicationDetail {
 	private LocalDateTime createdDate;
     private String updatedBy;
     @Temporal(TemporalType.TIMESTAMP)
-	private Date updatedDate;
+	private LocalDateTime updatedDate;
     private String delFlag ;
-//getter and setters//
+    private String lonetype;
+ 
+		//getter and setters//
 		public Long getId() {
 			return id;
 		}
 		public void setId(Long id) {
 			this.id = id;
 		}
-		public String getUserid() {
-			return userid;
-		}
- 
-		public void setUserid(String userid) {
-			this.userid = userid;
-		}
 
+ 
+		public String getUserId() {
+			return userId;
+		}
+		public void setUserId(String userId) {
+			this.userId = userId;
+		}
 		public Date getDateOfBirth() {
 			return dateOfBirth;
 		}
@@ -140,11 +143,11 @@ public class ApplicationDetail {
 	    public void setUpdatedBy(String updatedBy) {
 	        this.updatedBy = updatedBy;
 	    }
-	    public Date getUpdatedDate() {
+	    public LocalDateTime getUpdatedDate() {
 	        return updatedDate;
 	    }
-	    public void setUpdatedDate(Date updatedDate) {
-	        this.updatedDate = updatedDate;
+	    public void setUpdatedDate(LocalDateTime localDateTime) {
+	        this.updatedDate = localDateTime;
 	    }
 	    public String getDelFlag() {
 	        return delFlag;
@@ -152,25 +155,25 @@ public class ApplicationDetail {
 	    public void setDelFlag(String delFlag) {
 	        this.delFlag = delFlag;
 	    }
- 
 		public User getUser() {
 			return user;
 		}
- 
 		public void setUser(User user) {
 			this.user = user;
 		}
- 
-		
- 
+
 		public String getApplicationnumber() {
 			return applicationNumber;
 		}
- 
 		public void setApplicationnumber(String application_number) {
 			this.applicationNumber= application_number;
 		}
-
-
-
+		public String getLonetype() {
+			return lonetype;
+		}
+		public void setLonetype(String lonetype) {
+			this.lonetype = lonetype;
+		}
+ 
+ 
 }

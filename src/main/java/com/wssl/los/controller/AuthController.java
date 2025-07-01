@@ -31,22 +31,32 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.wssl.los.model.AcceptOffer;
 import com.wssl.los.model.ApiResponse;
 import com.wssl.los.model.ApplicationDetail;
 import com.wssl.los.model.ApprovalProcessFlow;
+import com.wssl.los.model.DocumentVerification;
+import com.wssl.los.model.FundedInfo;
+import com.wssl.los.model.LinkBankAccount;
 import com.wssl.los.model.LoanType;
 import com.wssl.los.model.Menu;
 import com.wssl.los.model.Organization;
 import com.wssl.los.model.Otp;
+import com.wssl.los.model.ReviewAndAgreement;
 import com.wssl.los.model.Role;
 import com.wssl.los.model.RoleMenuPermission;
 import com.wssl.los.model.User;
+import com.wssl.los.repository.AcceptOfferRepository;
 import com.wssl.los.repository.ApplicationDetailRepository;
 import com.wssl.los.repository.ApprovalProcessFlowRepository;
+import com.wssl.los.repository.DocumentverificationRepository;
+import com.wssl.los.repository.FundedRepository;
+import com.wssl.los.repository.LinkBankAccountRepository;
 import com.wssl.los.repository.LoanTypeRepository;
 import com.wssl.los.repository.MenuRepository;
 import com.wssl.los.repository.OrganizationRepository;
 import com.wssl.los.repository.OtpRepository;
+import com.wssl.los.repository.ReviewAndAgreementRepository;
 import com.wssl.los.repository.RoleMenuPermissionRepository;
 import com.wssl.los.repository.RoleRepository;
 import com.wssl.los.repository.UserRepository;
@@ -90,6 +100,18 @@ public class AuthController {
 
 	@Autowired
 	private ApprovalProcessFlowRepository flowRepository;
+	
+
+	@Autowired
+	private LinkBankAccountRepository linkedbankaccountRepository;
+	@Autowired
+	private DocumentverificationRepository documentVerificationRepository;
+	@Autowired
+	private AcceptOfferRepository acceptOfferRepository;
+	@Autowired
+	private ReviewAndAgreementRepository reviewAndAgreementRepository;
+	@Autowired
+	private FundedRepository fundedInfoRepository;
 
 	private AtomicLong userSequence = new AtomicLong(1);
 	private Map<String, String> otpStore = new HashMap<>();
@@ -873,7 +895,7 @@ public class AuthController {
 
 			ApplicationDetail savedDetails = applicationDetailRepository.save(applicationdetails);
 
-			String applicationNumber = savedDetails.getUserid() + "-" + savedDetails.getId();
+			String applicationNumber = savedDetails.getUserId() + "-" + savedDetails.getId();
 
 			savedDetails.setApplicationnumber(applicationNumber);
 			applicationDetailRepository.save(savedDetails); // Save updated applicationNumber
@@ -881,7 +903,7 @@ public class AuthController {
 			// Step 4: Prepare response
 			Map<String, Object> responseData = new HashMap<>();
 			responseData.put("id", savedDetails.getId());
-			responseData.put("userId", savedDetails.getUserid());
+			responseData.put("userId", savedDetails.getUserId());
 			responseData.put("applicationNumber", applicationNumber);
 
 			return ResponseEntity.ok(
@@ -894,8 +916,828 @@ public class AuthController {
 		}
 	}
 
+	@GetMapping("/get_applicationdetailsonly/{applicationNumber}")
+
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getApplicationOnly(@PathVariable String applicationNumber) {
+		try {
+			// Check if application exists
+			ApplicationDetail app = applicationDetailRepository.findByApplicationNumberAndDelFlag(applicationNumber,
+					"N");
+
+			if (app == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application details not found", null));
+			}
+
+			// Application block only
+			Map<String, Object> applicationData = new LinkedHashMap<>();
+			applicationData.put("applicationId", app.getId());
+			applicationData.put("applicationNumber", app.getApplicationnumber());
+			applicationData.put("dateOfBirth", app.getDateOfBirth());
+			applicationData.put("monthlyGrossIncome", app.getMonthlyGrossIncome());
+			applicationData.put("ssn", app.getSsn());
+			applicationData.put("confirmSsn", app.getConfirmSsn());
+			applicationData.put("howMuchDoYouNeed", app.getHowMuchDoYouNeed());
+			applicationData.put("homeAddress", app.getHomeAddress());
+			applicationData.put("homeAddress2", app.getHomeAddress2());
+			applicationData.put("zipCode", app.getZipCode());
+			applicationData.put("city", app.getCity());
+			applicationData.put("state", app.getState());
+			applicationData.put("isHomeOwner", app.getIsHomeOwner());
+			applicationData.put("createdBy", app.getCreatedBy());
+			applicationData.put("createdDate", app.getCreatedDate());
+			applicationData.put("updatedBy", app.getUpdatedBy());
+			applicationData.put("updatedDate", app.getUpdatedDate());
+
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+					"Application details retrieved successfully", applicationData));
+
+		} catch (Exception e) {
+			e.printStackTrace(); // Replace with logger if preferred
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"Error occurred while retrieving application details: " + e.getMessage(), null));
+		}
+	}
+
+	@GetMapping("/getapplicationCount")
+	public ResponseEntity<ApiResponse<Long>> getApplicationCount() {
+		try {
+			long appCount = applicationDetailRepository.countByDelFlag("N");
+			return ResponseEntity
+					.ok(new ApiResponse<>(HttpStatus.OK.value(), "Application count retrieved successfully", appCount));
+		} catch (Exception e) {
+
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"Failed to retrieve application count: " + e.getMessage(), null));
+		}
+	}
+
+	@DeleteMapping("/delete_application_by_number/{applicationNumber}")
+	public ResponseEntity<ApiResponse<String>> deleteApplicationByApplicationNumber(
+			@PathVariable String applicationNumber) {
+		try {
+			// Fetch application by application number and delFlag = 'N'
+			ApplicationDetail application = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+
+			if (application == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+						"Application not found with application number: " + applicationNumber));
+			}
+
+			// Soft delete
+			application.setDelFlag("Y");
+			application.setUpdatedDate(LocalDateTime.now());
+			applicationDetailRepository.save(application);
+
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+					"Application soft-deleted successfully with application number: " + applicationNumber));
+		} catch (Exception e) {
+			e.printStackTrace(); // Optional: use logger
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<>(
+					HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to delete application: " + e.getMessage()));
+		}
+	}
+
+	@PostMapping("/addOrUpdate_applicationBankdetails")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> addOrUpdateBankAccount(
+			@RequestBody LinkBankAccount incoming) {
+		Map<String, Object> response = new HashMap<>();
+
+		try {
+			// Step 1: Validate input
+			if (incoming.getApplicationDetail() == null
+					|| incoming.getApplicationDetail().getApplicationnumber() == null) {
+				return ResponseEntity.badRequest().body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(),
+						"Application number must not be null.", null));
+			}
+
+			String applicationNumber = incoming.getApplicationDetail().getApplicationnumber();
+
+			// Step 2: Fetch ApplicationDetail (along with User)
+			ApplicationDetail application = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+
+			if (application == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+						"Invalid or deleted application number.", null));
+			}
+
+			User user = application.getUser();
+
+			if (user == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+						new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found for the application.", null));
+			}
+
+			String userId = user.getUserId();
+
+			// Step 3: Check if bank account already exists
+			Optional<LinkBankAccount> existingOpt = linkedbankaccountRepository
+					.findByUser_UserIdAndApplicationDetail_ApplicationNumber(userId, applicationNumber);
+
+			boolean isUpdate = existingOpt.isPresent();
+			LinkBankAccount account = existingOpt.orElse(new LinkBankAccount());
+
+			// Step 4: Set values
+			account.setUser(user);
+			account.setApplicationDetail(application);
+			account.setAccountHolderName(incoming.getAccountHolderName());
+			account.setBankName(incoming.getBankName());
+			account.setAccountNumber(incoming.getAccountNumber());
+			account.setIfscCode(incoming.getIfscCode());
+			account.setAccountType(incoming.getAccountType());
+			account.setIsAuthorized(incoming.getIsAuthorized());
+			account.setDelFlag("N");
+			account.setCreatedDate(LocalDateTime.now());
+
+			// Step 5: Save to DB
+			LinkBankAccount saved = linkedbankaccountRepository.save(account);
+
+			// Step 6: Prepare response
+			response.put("accountId", saved.getId());
+			response.put("applicationNumber", application.getApplicationnumber());
+			response.put("loanType", application.getLonetype());
+			response.put("delFlag", saved.getDelFlag());
+
+			String message = isUpdate ? "Bank account updated successfully." : "Bank account added successfully.";
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), message, response));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"An unexpected error occurred while saving bank account details: " + e.getMessage(), null));
+		}
+	}
+
+	@GetMapping("/get_linkedBankAccountsdetailsonly/{applicationNumber}")
+	public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getLinkedBankAccountsByApplication(
+			@PathVariable String applicationNumber) {
+		try {
+			// Check if application exists and is not deleted
+			ApplicationDetail app = applicationDetailRepository.findByApplicationNumberAndDelFlag(applicationNumber,
+					"N");
+			if (app == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application not found", null));
+			}
+
+			// Fetch linked bank accounts
+			List<LinkBankAccount> bankAccounts = linkedbankaccountRepository
+					.findByApplicationDetail_ApplicationNumberAndDelFlag(applicationNumber, "N");
+
+			if (bankAccounts.isEmpty()) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "No linked bank accounts found", null));
+			}
+
+			// Build response list
+			List<Map<String, Object>> bankList = new ArrayList<>();
+			for (LinkBankAccount bank : bankAccounts) {
+				Map<String, Object> bankData = new LinkedHashMap<>();
+				bankData.put("accountId", bank.getId());
+				bankData.put("accountHolderName", bank.getAccountHolderName());
+				bankData.put("bankName", bank.getBankName());
+				bankData.put("accountNumber", bank.getAccountNumber());
+				bankData.put("ifscCode", bank.getIfscCode());
+				bankData.put("accountType", bank.getAccountType());
+				bankData.put("isAuthorized", bank.getIsAuthorized());
+				bankData.put("createdDate", bank.getCreatedDate());
+				bankList.add(bankData);
+			}
+
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+					"Linked bank account details retrieved successfully", bankList));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"Error occurred while fetching linked bank accounts: " + e.getMessage(), null));
+		}
+	}
+
+	@DeleteMapping("/delete_Linked_applicationdetails/{applicationNumber}")
+	public ResponseEntity<ApiResponse<String>> softDeleteLinkedBankAccounts(@PathVariable String applicationNumber) {
+		try {
+			// Step 1: Check if application exists
+			ApplicationDetail application = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+
+			if (application == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application not found", null));
+			}
+
+			// Step 2: Find all active bank accounts linked to the application
+			List<LinkBankAccount> bankAccounts = linkedbankaccountRepository
+					.findByApplicationDetail_ApplicationNumberAndDelFlag(applicationNumber, "N");
+
+			if (bankAccounts.isEmpty()) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+						new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "No active linked bank accounts found", null));
+			}
+
+			// Step 3: Soft delete each account
+			for (LinkBankAccount account : bankAccounts) {
+				account.setDelFlag("Y");
+				account.setCreatedDate(LocalDateTime.now()); // Optional: update timestamp
+			}
+
+			linkedbankaccountRepository.saveAll(bankAccounts);
+
+			return ResponseEntity
+					.ok(new ApiResponse<>(HttpStatus.OK.value(), "Linked bank accounts deleted successfully", null));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"Error deleting bank account details: " + e.getMessage(), null));
+		}
+	}
+
+	@PostMapping("/addOrUpdate_Application_documentDeatils")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> addOrUpdateDocument(
+			@RequestBody DocumentVerification incoming) {
+
+		Map<String, Object> response = new HashMap<>();
+
+		try {
+			// Step 1: Validate input
+			if (incoming.getApplicationNumber() == null || incoming.getUser() == null) {
+				return ResponseEntity.badRequest().body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(),
+						"Application number and user info must not be null.", null));
+			}
+
+			String applicationNumber = incoming.getApplicationNumber();
+			String userId = incoming.getUser().getUserId();
+
+			// Step 2: Fetch application and user (read-only)
+			ApplicationDetail application = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+
+			if (application == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+						"Invalid or deleted application number.", null));
+			}
+
+			User user = application.getUser();
+
+			if (user == null || !user.getUserId().equals(userId)) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+						"User not found or does not match application.", null));
+			}
+
+			// Step 3: Check for existing document
+			Optional<DocumentVerification> existingOpt = documentVerificationRepository
+					.findByApplicationNumberAndUser_UserIdAndDocumentNumberAndDelFlag(applicationNumber, userId,
+							incoming.getDocumentNumber(), "N");
+
+			boolean isUpdate = existingOpt.isPresent();
+			DocumentVerification document = existingOpt.orElse(new DocumentVerification());
+
+			// Step 4: Set values
+			document.setApplicationNumber(applicationNumber);
+			document.setUser(user);
+			document.setDocumentType(incoming.getDocumentType());
+			document.setDocumentNumber(incoming.getDocumentNumber());
+			document.setIssueDate(incoming.getIssueDate());
+			document.setExpiryDate(incoming.getExpiryDate());
+			document.setIssuingAuthority(incoming.getIssuingAuthority());
+			document.setFilePath(incoming.getFilePath());
+			document.setConsentGiven(incoming.getConsentGiven());
+			document.setDelFlag("N");
+			document.setCreatedAt(LocalDateTime.now());
+
+			// Step 5: Save to DB
+			DocumentVerification saved = documentVerificationRepository.save(document);
+
+			// Step 6: Prepare response
+			response.put("documentId", saved.getId());
+			response.put("applicationNumber", applicationNumber);
+			response.put("documentType", saved.getDocumentType());
+			response.put("userId", userId);
+			response.put("delFlag", saved.getDelFlag());
+
+			String message = isUpdate ? "Document verification updated successfully."
+					: "Document verification added successfully.";
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), message, response));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"An unexpected error occurred while saving document verification: " + e.getMessage(),
+							null));
+		}
+	}
+
+	@GetMapping("/get_only_one_document_detail/{applicationNumber}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getOnlyOneDocumentDetail(
+			@PathVariable String applicationNumber) {
+		try {
+			// Step 1: Check application and user
+			ApplicationDetail application = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+			if (application == null || application.getUser() == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application or user not found", null));
+			}
+
+			User user = application.getUser();
+
+			// Step 2: Fetch one document
+			List<DocumentVerification> documents = documentVerificationRepository
+					.findByApplicationNumberAndUser_UserIdAndDelFlag(applicationNumber, user.getUserId(), "N");
+
+			if (documents.isEmpty()) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "No document details found", null));
+			}
+
+			DocumentVerification doc = documents.get(0); // pick the first one
+			Map<String, Object> docData = new LinkedHashMap<>();
+			docData.put("documentId", doc.getId());
+			docData.put("documentType", doc.getDocumentType());
+			docData.put("documentNumber", doc.getDocumentNumber());
+			docData.put("issueDate", doc.getIssueDate());
+			docData.put("expiryDate", doc.getExpiryDate());
+			docData.put("issuingAuthority", doc.getIssuingAuthority());
+			docData.put("filePath", doc.getFilePath());
+			docData.put("consentGiven", doc.getConsentGiven());
+			docData.put("createdAt", doc.getCreatedAt());
+
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+					"Single document verification detail retrieved successfully", docData));
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"Error retrieving document details: " + e.getMessage(), null));
+		}
+	}
+
+	@DeleteMapping("/delete_application_documentdetails/{applicationNumber}")
+	public ResponseEntity<ApiResponse<String>> Deletedocmentdails(@PathVariable String applicationNumber) {
+		try {
+			// Step 1: Check if application exists
+			ApplicationDetail application = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+
+			if (application == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application not found", null));
+			}
+
+			String userId = application.getUser() != null ? application.getUser().getUserId() : null;
+
+			// Step 2: Delete Linked Bank Accounts
+			List<LinkBankAccount> bankAccounts = linkedbankaccountRepository
+					.findByApplicationDetail_ApplicationNumberAndDelFlag(applicationNumber, "N");
+
+			for (LinkBankAccount account : bankAccounts) {
+				account.setDelFlag("Y");
+				account.setCreatedDate(LocalDateTime.now()); // Optional update
+			}
+			linkedbankaccountRepository.saveAll(bankAccounts);
+
+			// Step 3: Delete Document Verifications
+			if (userId != null) {
+				List<DocumentVerification> documents = documentVerificationRepository
+						.findByApplicationNumberAndUser_UserIdAndDelFlag(applicationNumber, userId, "N");
+
+				for (DocumentVerification doc : documents) {
+					doc.setDelFlag("Y");
+					doc.setCreatedAt(LocalDateTime.now()); // Optional update
+				}
+				documentVerificationRepository.saveAll(documents);
+			}
+
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+					"Linked bank accounts and document verifications deleted successfully", null));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<>(
+					HttpStatus.INTERNAL_SERVER_ERROR.value(), "Error deleting linked data: " + e.getMessage(), null));
+		}
+	}
+
+	@PostMapping("/addOrUpdate_Application_acceptOffer")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> addOrUpdateAcceptOffer(@RequestBody AcceptOffer incoming) {
+
+		Map<String, Object> response = new HashMap<>();
+
+		try {
+			// Step 1: Validate input
+			if (incoming.getApplicationDetail() == null || incoming.getUser() == null) {
+				return ResponseEntity.badRequest().body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(),
+						"Application and user info must not be null.", null));
+			}
+
+			String applicationNumber = incoming.getApplicationDetail().getApplicationnumber();
+			String userId = incoming.getUser().getUserId();
+
+			// Step 2: Fetch application and user (read-only)
+			ApplicationDetail application = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+
+			if (application == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+						"Invalid or deleted application number.", null));
+			}
+
+			User user = application.getUser();
+
+			if (user == null || !user.getUserId().equals(userId)) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+						"User not found or does not match application.", null));
+			}
+
+			// Step 3: Check for existing offer
+			Optional<AcceptOffer> existingOpt = acceptOfferRepository
+					.findByApplicationDetail_ApplicationNumberAndUser_UserIdAndDelFlag(applicationNumber, userId, "N");
+
+			boolean isUpdate = existingOpt.isPresent();
+			AcceptOffer offer = existingOpt.orElse(new AcceptOffer());
+
+			// ✅ Step 4: Set required fields
+			offer.setApplicationDetail(application);
+			offer.setApplicationNumber(application.getApplicationnumber()); // ✅ THIS FIXES YOUR ERROR
+			offer.setUser(user);
+			offer.setLoanAmount(incoming.getLoanAmount());
+			offer.setTenureMonths(incoming.getTenureMonths());
+			offer.setInterestRate(incoming.getInterestRate());
+			offer.setEstimatedEmi(incoming.getEstimatedEmi());
+			offer.setConsentGiven(incoming.getConsentGiven());
+			offer.setDelFlag("N");
+			offer.setCreatedAt(LocalDateTime.now());
+
+			// Step 5: Save to DB
+			AcceptOffer saved = acceptOfferRepository.save(offer);
+
+			// Step 6: Prepare response
+			response.put("offerId", saved.getId());
+			response.put("applicationNumber", applicationNumber);
+			response.put("loanAmount", saved.getLoanAmount());
+			response.put("tenureMonths", saved.getTenureMonths());
+			response.put("interestRate", saved.getInterestRate());
+			response.put("estimatedEmi", saved.getEstimatedEmi());
+			response.put("userId", userId);
+			response.put("consentGiven", saved.getConsentGiven());
+			response.put("delFlag", saved.getDelFlag());
+
+			String message = isUpdate ? "Accept offer updated successfully." : "Accept offer added successfully.";
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), message, response));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"An unexpected error occurred while saving offer: " + e.getMessage(), null));
+		}
+	}
+
+	@GetMapping("/get_accept_offer_detailsonly/{applicationNumber}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getAcceptOfferDetailsByApplicationNumber(
+			@PathVariable String applicationNumber) {
+		try {
+			// Step 1: Find application
+			ApplicationDetail application = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+			if (application == null || application.getUser() == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application or user not found", null));
+			}
+
+			User user = application.getUser();
+
+			// Step 2: Find AcceptOffer
+			Optional<AcceptOffer> offerOpt = acceptOfferRepository
+					.findByApplicationDetail_ApplicationNumberAndUser_UserIdAndDelFlag(applicationNumber,
+							user.getUserId(), "N");
+
+			if (offerOpt.isEmpty()) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "No accept offer details found", null));
+			}
+
+			AcceptOffer offer = offerOpt.get();
+			Map<String, Object> offerData = new LinkedHashMap<>();
+			offerData.put("offerId", offer.getId());
+			offerData.put("loanAmount", offer.getLoanAmount());
+			offerData.put("tenureMonths", offer.getTenureMonths());
+			offerData.put("interestRate", offer.getInterestRate());
+			offerData.put("estimatedEmi", offer.getEstimatedEmi());
+			offerData.put("consentGiven", offer.getConsentGiven());
+			offerData.put("createdAt", offer.getCreatedAt());
+
+			return ResponseEntity.ok(
+					new ApiResponse<>(HttpStatus.OK.value(), "Accept offer details retrieved successfully", offerData));
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"Error retrieving accept offer details: " + e.getMessage(), null));
+		}
+	}
+
+	@DeleteMapping("/delete_application_acceptoffer_details/{applicationNumber}")
+	public ResponseEntity<ApiResponse<String>> deleteAcceptOfferDetails(@PathVariable String applicationNumber) {
+		try {
+			// Step 1: Fetch the application
+			ApplicationDetail application = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+
+			if (application == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application not found", null));
+			}
+
+			User user = application.getUser();
+			if (user == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+						new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found for this application", null));
+			}
+
+			// Step 2: Fetch Accept Offer (if exists)
+			Optional<AcceptOffer> offerOpt = acceptOfferRepository
+					.findByApplicationDetail_IdAndUser_UserIdAndDelFlag(application.getId(), user.getUserId(), "N");
+
+			if (offerOpt.isPresent()) {
+				AcceptOffer offer = offerOpt.get();
+				offer.setDelFlag("Y");
+				offer.setCreatedAt(LocalDateTime.now()); // optional: mark time of logical deletion
+				acceptOfferRepository.save(offer);
+
+				return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+						"Accept offer data marked as deleted successfully", null));
+			} else {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "No accept offer record found", null));
+			}
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"Error deleting accept offer details: " + e.getMessage(), null));
+		}
+	}
+
+	@PostMapping("/addOrUpdate_Application_reviewAgreement")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> addOrUpdateReviewAgreement(
+			@RequestBody ReviewAndAgreement incoming) {
+
+		Map<String, Object> response = new HashMap<>();
+
+		try {
+			// Step 1: Validate input
+			if (incoming.getApplicationNumber() == null || incoming.getUserId() == null) {
+				return ResponseEntity.badRequest().body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(),
+						"Application number and user ID must not be null.", null));
+			}
+
+			String applicationNumber = incoming.getApplicationNumber();
+			String userId = incoming.getUserId();
+
+			// Step 2: Get ApplicationDetail for reference (optional, but useful for
+			// linking)
+			ApplicationDetail appDetail = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+			if (appDetail == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+						new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application not found or deleted.", null));
+			}
+
+			// Step 3: Check for existing ReviewAndAgreement record
+			Optional<ReviewAndAgreement> existingOpt = reviewAndAgreementRepository
+					.findByApplicationNumberAndUserIdAndDelFlag(applicationNumber, userId, "N");
+
+			boolean isUpdate = existingOpt.isPresent();
+			ReviewAndAgreement agreement = existingOpt.orElse(new ReviewAndAgreement());
+
+			// Step 4: Set fields
+			agreement.setApplicationDetail(appDetail);
+			agreement.setApplicationNumber(applicationNumber);
+			agreement.setUserId(userId);
+			agreement.setInfoConfirmed(incoming.getInfoConfirmed());
+			agreement.setTermsAgreed(incoming.getTermsAgreed());
+			agreement.setIdentityAuthorized(incoming.getIdentityAuthorized());
+			agreement.setFullName(incoming.getFullName());
+			agreement.setSignatureType(incoming.getSignatureType());
+			agreement.setSignatureMethod(incoming.getSignatureMethod());
+			agreement.setSignaturePath(incoming.getSignaturePath());
+			agreement.setDelFlag("N");
+
+			if (!isUpdate) {
+				agreement.setCreatedAt(LocalDateTime.now());
+			}
+
+			// Step 5: Save
+			ReviewAndAgreement saved = reviewAndAgreementRepository.save(agreement);
+
+			// Step 6: Prepare response
+			response.put("reviewAgreementId", saved.getId());
+			response.put("applicationNumber", saved.getApplicationNumber());
+			response.put("userId", saved.getUserId());
+			response.put("infoConfirmed", saved.getInfoConfirmed());
+			response.put("termsAgreed", saved.getTermsAgreed());
+			response.put("identityAuthorized", saved.getIdentityAuthorized());
+			response.put("fullName", saved.getFullName());
+			response.put("signatureType", saved.getSignatureType());
+			response.put("signatureMethod", saved.getSignatureMethod());
+			response.put("signaturePath", saved.getSignaturePath());
+			response.put("createdAt", saved.getCreatedAt());
+			response.put("delFlag", saved.getDelFlag());
+
+			String message = isUpdate ? "Review and agreement updated successfully."
+					: "Review and agreement added successfully.";
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), message, response));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"An unexpected error occurred while saving review and agreement: " + e.getMessage(), null));
+		}
+	}
+
+	@GetMapping("/get_reviewandagreement_by_application_only/{applicationNumber}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getReviewAndAgreementByAppNumber(
+			@PathVariable String applicationNumber) {
+		try {
+			// Step 1: Fetch application by application number and delFlag
+			ApplicationDetail application = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+
+			if (application == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application not found", null));
+			}
+
+			User user = application.getUser();
+			if (user == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+						new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not associated with application", null));
+			}
+
+			// Step 2: Fetch review and agreement
+			Optional<ReviewAndAgreement> agreementOpt = reviewAndAgreementRepository
+					.findByApplicationNumberAndUserIdAndDelFlag(applicationNumber, user.getUserId(), "N");
+
+			if (agreementOpt.isEmpty()) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+						"Review and agreement details not found", null));
+			}
+
+			ReviewAndAgreement agreement = agreementOpt.get();
+			Map<String, Object> agreementData = new LinkedHashMap<>();
+			agreementData.put("reviewAgreementId", agreement.getId());
+			agreementData.put("infoConfirmed", agreement.getInfoConfirmed());
+			agreementData.put("termsAgreed", agreement.getTermsAgreed());
+			agreementData.put("identityAuthorized", agreement.getIdentityAuthorized());
+			agreementData.put("fullName", agreement.getFullName());
+			agreementData.put("signatureType", agreement.getSignatureType());
+			agreementData.put("signatureMethod", agreement.getSignatureMethod());
+			agreementData.put("signaturePath", agreement.getSignaturePath());
+			agreementData.put("createdAt", agreement.getCreatedAt());
+			agreementData.put("delFlag", agreement.getDelFlag());
+
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+					"Review and agreement details retrieved successfully", agreementData));
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"Error retrieving review and agreement details: " + e.getMessage(), null));
+		}
+	}
+
+	@DeleteMapping("/delete_Application_reviewandsignAgreementdetails/{applicationNumber}")
+	public ResponseEntity<ApiResponse<String>> deleteReviewAndSignAgreement(@PathVariable String applicationNumber) {
+		try {
+			// Step 1: Fetch the application
+			ApplicationDetail application = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+
+			if (application == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application not found", null));
+			}
+
+			User user = application.getUser();
+			if (user == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+						new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found for this application", null));
+			}
+
+			// Step 2: Fetch ReviewAndAgreement (if exists)
+			Optional<ReviewAndAgreement> agreementOpt = reviewAndAgreementRepository
+					.findByApplicationNumberAndUserIdAndDelFlag(applicationNumber, user.getUserId(), "N");
+
+			if (agreementOpt.isPresent()) {
+				ReviewAndAgreement agreement = agreementOpt.get();
+				agreement.setDelFlag("Y");
+				agreement.setCreatedAt(LocalDateTime.now()); // optional: mark time of logical deletion
+				reviewAndAgreementRepository.save(agreement);
+
+				return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+						"Review and agreement data marked as deleted successfully", null));
+			} else {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+						new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "No review and agreement record found", null));
+			}
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"Error deleting review and agreement details: " + e.getMessage(), null));
+		}
+	}
+
+	@PostMapping("/addOrUpdate_Application_fundedInfo")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> addOrUpdateFundedInfo(@RequestBody FundedInfo incoming) {
+
+		Map<String, Object> response = new HashMap<>();
+
+		try {
+			// Step 1: Validate input
+			if (incoming.getApplicationNumber() == null || incoming.getUserId() == null) {
+				return ResponseEntity.badRequest().body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(),
+						"Application number and user ID must not be null.", null));
+			}
+
+			String applicationNumber = incoming.getApplicationNumber();
+			String userId = incoming.getUserId();
+
+			// Step 2: Get ApplicationDetail for reference
+			ApplicationDetail appDetail = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+			if (appDetail == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+						new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application not found or deleted.", null));
+			}
+
+			// Step 3: Check if FundedInfo already exists
+			Optional<FundedInfo> existingOpt = fundedInfoRepository
+					.findByApplicationNumberAndUserIdAndDelFlag(applicationNumber, userId, "N");
+
+			boolean isUpdate = existingOpt.isPresent();
+			FundedInfo funded = existingOpt.orElse(new FundedInfo());
+
+			// Step 4: Set fields
+			funded.setApplicationDetail(appDetail);
+			funded.setApplicationNumber(applicationNumber);
+			funded.setUserId(userId);
+			funded.setFundingAmount(incoming.getFundingAmount());
+			funded.setFundingDate(incoming.getFundingDate());
+			funded.setConfirmFunding(incoming.getConfirmFunding());
+			funded.setDelFlag("N");
+
+			if (!isUpdate) {
+				funded.setCreatedBy(incoming.getCreatedBy());
+				funded.setCreatedDate(LocalDateTime.now());
+			}
+
+			funded.setUpdatedBy(incoming.getUpdatedBy());
+			funded.setUpdatedDate(LocalDateTime.now());
+
+			// Step 5: Save
+			FundedInfo saved = fundedInfoRepository.save(funded);
+
+			// Step 6: Prepare response
+			response.put("fundedId", saved.getId());
+			response.put("applicationNumber", saved.getApplicationNumber());
+			response.put("userId", saved.getUserId());
+			response.put("fundingAmount", saved.getFundingAmount());
+			response.put("fundingDate", saved.getFundingDate());
+			response.put("confirmFunding", saved.getConfirmFunding());
+			response.put("createdBy", saved.getCreatedBy());
+			response.put("createdDate", saved.getCreatedDate());
+			response.put("updatedBy", saved.getUpdatedBy());
+			response.put("updatedDate", saved.getUpdatedDate());
+			response.put("delFlag", saved.getDelFlag());
+
+			String message = isUpdate ? "Funded info updated successfully." : "Funded info added successfully.";
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), message, response));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+							"An unexpected error occurred while saving funded info: " + e.getMessage(), null));
+		}
+	}
+
 	@GetMapping("/get_allApplicationDetails")
-	public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getAllApplicationDetails() {
+	public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getAllApplicationCompleteDetails() {
 		try {
 			List<ApplicationDetail> applications = applicationDetailRepository.findAll();
 
@@ -903,7 +1745,7 @@ public class AuthController {
 					.filter(app -> !"Y".equalsIgnoreCase(app.getDelFlag())).map(app -> {
 						Map<String, Object> responseMap = new LinkedHashMap<>();
 
-						// Application data
+						// Application Info
 						Map<String, Object> applicationData = new LinkedHashMap<>();
 						applicationData.put("applicationId", app.getId());
 						applicationData.put("applicationNumber", app.getApplicationnumber());
@@ -922,40 +1764,192 @@ public class AuthController {
 						applicationData.put("createdDate", app.getCreatedDate());
 						applicationData.put("updatedBy", app.getUpdatedBy());
 						applicationData.put("updatedDate", app.getUpdatedDate());
-
+						applicationData.put("lonetype", app.getLonetype());
 						responseMap.put("applicationDetails", applicationData);
 
-						// User and Role (nested)
-						if (app.getUser() != null) {
-							User user = app.getUser();
+						// User Info
+						User user = app.getUser();
+						if (user != null) {
 							Map<String, Object> userData = new LinkedHashMap<>();
 							userData.put("userId", user.getUserId());
 							userData.put("firstName", user.getFirstName());
 							userData.put("lastName", user.getLastName());
 							userData.put("email", user.getEmail());
 							userData.put("phone", user.getPhone());
-
 							responseMap.put("userDetails", userData);
+						}
+
+						// Linked Bank Accounts
+						List<LinkBankAccount> bankAccounts = linkedbankaccountRepository
+								.findByApplicationDetail_ApplicationNumberAndDelFlag(app.getApplicationnumber(), "N");
+						if (!bankAccounts.isEmpty()) {
+							List<Map<String, Object>> bankList = new ArrayList<>();
+							for (LinkBankAccount bank : bankAccounts) {
+								Map<String, Object> bankData = new LinkedHashMap<>();
+								bankData.put("accountId", bank.getId());
+								bankData.put("accountHolderName", bank.getAccountHolderName());
+								bankData.put("bankName", bank.getBankName());
+								bankData.put("accountNumber", bank.getAccountNumber());
+								bankData.put("ifscCode", bank.getIfscCode());
+								bankData.put("accountType", bank.getAccountType());
+								bankData.put("isAuthorized", bank.getIsAuthorized());
+								bankData.put("createdDate", bank.getCreatedDate());
+								bankList.add(bankData);
+							}
+							responseMap.put("linkedBankAccounts", bankList);
+						}
+
+						// Document Verifications
+						if (user != null) {
+							List<DocumentVerification> documents = documentVerificationRepository
+									.findByApplicationNumberAndUser_UserIdAndDelFlag(app.getApplicationnumber(),
+											user.getUserId(), "N");
+							if (!documents.isEmpty()) {
+								List<Map<String, Object>> docList = new ArrayList<>();
+								for (DocumentVerification doc : documents) {
+									Map<String, Object> docData = new LinkedHashMap<>();
+									docData.put("documentId", doc.getId());
+									docData.put("documentType", doc.getDocumentType());
+									docData.put("documentNumber", doc.getDocumentNumber());
+									docData.put("issueDate", doc.getIssueDate());
+									docData.put("expiryDate", doc.getExpiryDate());
+									docData.put("issuingAuthority", doc.getIssuingAuthority());
+									docData.put("filePath", doc.getFilePath());
+									docData.put("consentGiven", doc.getConsentGiven());
+									docData.put("createdAt", doc.getCreatedAt());
+									docList.add(docData);
+								}
+								responseMap.put("documentVerifications", docList);
+							}
+						}
+
+						// Accept Offer
+						if (user != null) {
+							Optional<AcceptOffer> offerOpt = acceptOfferRepository
+									.findByApplicationDetail_ApplicationNumberAndUser_UserIdAndDelFlag(
+											app.getApplicationnumber(), user.getUserId(), "N");
+							offerOpt.ifPresent(offer -> {
+								Map<String, Object> offerData = new LinkedHashMap<>();
+								offerData.put("offerId", offer.getId());
+								offerData.put("loanAmount", offer.getLoanAmount());
+								offerData.put("tenureMonths", offer.getTenureMonths());
+								offerData.put("interestRate", offer.getInterestRate());
+								offerData.put("estimatedEmi", offer.getEstimatedEmi());
+								offerData.put("consentGiven", offer.getConsentGiven());
+								offerData.put("createdAt", offer.getCreatedAt());
+								responseMap.put("acceptOfferDetails", offerData);
+							});
+						}
+
+						// Review & Agreement
+						if (user != null) {
+							Optional<ReviewAndAgreement> agreementOpt = reviewAndAgreementRepository
+									.findByApplicationNumberAndUserIdAndDelFlag(app.getApplicationnumber(),
+											user.getUserId(), "N");
+							agreementOpt.ifPresent(agreement -> {
+								Map<String, Object> agreementData = new LinkedHashMap<>();
+								agreementData.put("reviewAgreementId", agreement.getId());
+								agreementData.put("infoConfirmed", agreement.getInfoConfirmed());
+								agreementData.put("termsAgreed", agreement.getTermsAgreed());
+								agreementData.put("identityAuthorized", agreement.getIdentityAuthorized());
+								agreementData.put("fullName", agreement.getFullName());
+								agreementData.put("signatureType", agreement.getSignatureType());
+								agreementData.put("signatureMethod", agreement.getSignatureMethod());
+								agreementData.put("signaturePath", agreement.getSignaturePath());
+								agreementData.put("createdAt", agreement.getCreatedAt());
+								agreementData.put("delFlag", agreement.getDelFlag());
+								responseMap.put("reviewAndAgreementDetails", agreementData);
+							});
+						}
+
+						// Funded Info
+						if (user != null) {
+							Optional<FundedInfo> fundedOpt = fundedInfoRepository
+									.findByApplicationNumberAndUserIdAndDelFlag(app.getApplicationnumber(),
+											user.getUserId(), "N");
+							fundedOpt.ifPresent(funded -> {
+								Map<String, Object> fundedData = new LinkedHashMap<>();
+								fundedData.put("fundedId", funded.getId());
+								fundedData.put("fundingAmount", funded.getFundingAmount());
+								fundedData.put("fundingDate", funded.getFundingDate());
+								fundedData.put("confirmFunding", funded.getConfirmFunding());
+								fundedData.put("createdBy", funded.getCreatedBy());
+								fundedData.put("createdDate", funded.getCreatedDate());
+								fundedData.put("updatedBy", funded.getUpdatedBy());
+								fundedData.put("updatedDate", funded.getUpdatedDate());
+								fundedData.put("delFlag", funded.getDelFlag());
+								responseMap.put("fundedInfo", fundedData);
+							});
 						}
 
 						return responseMap;
 					}).toList();
 
 			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
-					"Application details with user info retrieved successfully", responseList));
+					"All complete application details retrieved successfully", responseList));
+
 		} catch (Exception e) {
-			e.printStackTrace(); // Optional: use proper logger here
+			e.printStackTrace();
 			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
 					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
-							"Failed to fetch application details: " + e.getMessage(), null));
+							"Failed to fetch application complete details: " + e.getMessage(), null));
+		}
+	}
+
+	@GetMapping("/get_fund_details_by_applicationnoly/{applicationNumber}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getFundedInfoByApplicationNumber(
+			@PathVariable String applicationNumber) {
+		try {
+			// Step 1: Fetch application
+			ApplicationDetail application = applicationDetailRepository
+					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+
+			if (application == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application not found", null));
+			}
+
+			User user = application.getUser();
+			if (user == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+						new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found for this application", null));
+			}
+
+			// Step 2: Get funded info by application number and user ID
+			Optional<FundedInfo> fundedOpt = fundedInfoRepository
+					.findByApplicationNumberAndUserIdAndDelFlag(applicationNumber, user.getUserId(), "N");
+
+			if (fundedOpt.isEmpty()) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Funded info not found", null));
+			}
+
+			FundedInfo funded = fundedOpt.get();
+			Map<String, Object> fundedData = new LinkedHashMap<>();
+			fundedData.put("fundedId", funded.getId());
+			fundedData.put("fundingAmount", funded.getFundingAmount());
+			fundedData.put("fundingDate", funded.getFundingDate());
+			fundedData.put("confirmFunding", funded.getConfirmFunding());
+			fundedData.put("createdBy", funded.getCreatedBy());
+			fundedData.put("createdDate", funded.getCreatedDate());
+			fundedData.put("updatedBy", funded.getUpdatedBy());
+			fundedData.put("updatedDate", funded.getUpdatedDate());
+			fundedData.put("delFlag", funded.getDelFlag());
+
+			return ResponseEntity.ok(
+					new ApiResponse<>(HttpStatus.OK.value(), "Funded information retrieved successfully", fundedData));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<>(
+					HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to fetch funded info: " + e.getMessage(), null));
 		}
 	}
 
 	@GetMapping("/getApplicationDetails/{applicationNumber}")
-	public ResponseEntity<ApiResponse<Map<String, Object>>> getApplicationByApplicationNumber(
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getCompleteApplicationDetails(
 			@PathVariable String applicationNumber) {
 		try {
-			// Check if application exists
 			ApplicationDetail app = applicationDetailRepository.findByApplicationNumberAndDelFlag(applicationNumber,
 					"N");
 
@@ -985,12 +1979,13 @@ public class AuthController {
 			applicationData.put("createdDate", app.getCreatedDate());
 			applicationData.put("updatedBy", app.getUpdatedBy());
 			applicationData.put("updatedDate", app.getUpdatedDate());
+			applicationData.put("lonetype", app.getLonetype());
 
 			responseData.put("applicationDetails", applicationData);
 
 			// User block
-			if (app.getUser() != null) {
-				User user = app.getUser();
+			User user = app.getUser();
+			if (user != null) {
 				Map<String, Object> userData = new LinkedHashMap<>();
 				userData.put("userId", user.getUserId());
 				userData.put("firstName", user.getFirstName());
@@ -1004,30 +1999,150 @@ public class AuthController {
 				}
 
 				responseData.put("userDetails", userData);
+
+				// Linked Bank Accounts
+				List<LinkBankAccount> bankAccounts = linkedbankaccountRepository
+						.findByApplicationDetail_ApplicationNumberAndDelFlag(applicationNumber, "N");
+
+				if (!bankAccounts.isEmpty()) {
+					List<Map<String, Object>> bankList = new ArrayList<>();
+					for (LinkBankAccount bank : bankAccounts) {
+						Map<String, Object> bankData = new LinkedHashMap<>();
+						bankData.put("accountId", bank.getId());
+						bankData.put("accountHolderName", bank.getAccountHolderName());
+						bankData.put("bankName", bank.getBankName());
+						bankData.put("accountNumber", bank.getAccountNumber());
+						bankData.put("ifscCode", bank.getIfscCode());
+						bankData.put("accountType", bank.getAccountType());
+						bankData.put("isAuthorized", bank.getIsAuthorized());
+						bankData.put("createdDate", bank.getCreatedDate());
+						bankList.add(bankData);
+					}
+					responseData.put("linkedBankAccounts", bankList);
+				}
+
+				// Document Verifications
+				List<DocumentVerification> documents = documentVerificationRepository
+						.findByApplicationNumberAndUser_UserIdAndDelFlag(applicationNumber, user.getUserId(), "N");
+
+				if (!documents.isEmpty()) {
+					List<Map<String, Object>> docList = new ArrayList<>();
+					for (DocumentVerification doc : documents) {
+						Map<String, Object> docData = new LinkedHashMap<>();
+						docData.put("documentId", doc.getId());
+						docData.put("documentType", doc.getDocumentType());
+						docData.put("documentNumber", doc.getDocumentNumber());
+						docData.put("issueDate", doc.getIssueDate());
+						docData.put("expiryDate", doc.getExpiryDate());
+						docData.put("issuingAuthority", doc.getIssuingAuthority());
+						docData.put("filePath", doc.getFilePath());
+						docData.put("consentGiven", doc.getConsentGiven());
+						docData.put("createdAt", doc.getCreatedAt());
+						docList.add(docData);
+					}
+					responseData.put("documentVerifications", docList);
+				}
+
+				// Accept Offer
+				acceptOfferRepository.findByApplicationDetail_ApplicationNumberAndUser_UserIdAndDelFlag(
+						applicationNumber, user.getUserId(), "N").ifPresent(offer -> {
+							Map<String, Object> offerData = new LinkedHashMap<>();
+							offerData.put("offerId", offer.getId());
+							offerData.put("loanAmount", offer.getLoanAmount());
+							offerData.put("tenureMonths", offer.getTenureMonths());
+							offerData.put("interestRate", offer.getInterestRate());
+							offerData.put("estimatedEmi", offer.getEstimatedEmi());
+							offerData.put("consentGiven", offer.getConsentGiven());
+							offerData.put("createdAt", offer.getCreatedAt());
+							responseData.put("acceptOffer", offerData);
+						});
+
+				// Review & Agreement
+				reviewAndAgreementRepository
+						.findByApplicationNumberAndUserIdAndDelFlag(applicationNumber, user.getUserId(), "N")
+						.ifPresent(agreement -> {
+							Map<String, Object> agreementData = new LinkedHashMap<>();
+							agreementData.put("reviewAgreementId", agreement.getId());
+							agreementData.put("infoConfirmed", agreement.getInfoConfirmed());
+							agreementData.put("termsAgreed", agreement.getTermsAgreed());
+							agreementData.put("identityAuthorized", agreement.getIdentityAuthorized());
+							agreementData.put("fullName", agreement.getFullName());
+							agreementData.put("signatureType", agreement.getSignatureType());
+							agreementData.put("signatureMethod", agreement.getSignatureMethod());
+							agreementData.put("signaturePath", agreement.getSignaturePath());
+							agreementData.put("createdAt", agreement.getCreatedAt());
+							agreementData.put("delFlag", agreement.getDelFlag());
+							responseData.put("reviewAndAgreement", agreementData);
+						});
+
+				// ✅ Funded Info
+				fundedInfoRepository
+						.findByApplicationNumberAndUserIdAndDelFlag(applicationNumber, user.getUserId(), "N")
+						.ifPresent(funded -> {
+							Map<String, Object> fundedData = new LinkedHashMap<>();
+							fundedData.put("fundedId", funded.getId());
+							fundedData.put("fundingAmount", funded.getFundingAmount());
+							fundedData.put("fundingDate", funded.getFundingDate());
+							fundedData.put("confirmFunding", funded.getConfirmFunding());
+							fundedData.put("createdBy", funded.getCreatedBy());
+							fundedData.put("createdDate", funded.getCreatedDate());
+							fundedData.put("updatedBy", funded.getUpdatedBy());
+							fundedData.put("updatedDate", funded.getUpdatedDate());
+							fundedData.put("delFlag", funded.getDelFlag());
+							responseData.put("fundedInfo", fundedData);
+						});
 			}
 
 			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
-					"Application and user details retrieved successfully", responseData));
+					"Complete application details retrieved successfully", responseData));
+
 		} catch (Exception e) {
-			e.printStackTrace(); // Optional: replace with logger
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
-							"An error occurred while retrieving application details: " + e.getMessage()));
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<>(
+					HttpStatus.INTERNAL_SERVER_ERROR.value(), "Error occurred: " + e.getMessage(), null));
 		}
 	}
 
-	@GetMapping("/getapplicationCount")
-	public ResponseEntity<ApiResponse<Long>> getApplicationCount() {
+	@DeleteMapping("/delete_fundedInfo/{applicationNumber}")
+	public ResponseEntity<ApiResponse<String>> deleteFundedInfoByApplicationNumber(
+			@PathVariable String applicationNumber) {
 		try {
-			long appCount = applicationDetailRepository.countByDelFlag("N");
-			return ResponseEntity
-					.ok(new ApiResponse<>(HttpStatus.OK.value(), "Application count retrieved successfully", appCount));
-		} catch (Exception e) {
+			// Step 1: Validate application
+			ApplicationDetail app = applicationDetailRepository.findByApplicationNumberAndDelFlag(applicationNumber,
+					"N");
+			if (app == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+						new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application not found or already deleted"));
+			}
 
+			// Step 2: Get user
+			User user = app.getUser();
+			if (user == null) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found for this application"));
+			}
+
+			// Step 3: Find FundedInfo
+			Optional<FundedInfo> fundedOpt = fundedInfoRepository
+					.findByApplicationNumberAndUserIdAndDelFlag(applicationNumber, user.getUserId(), "N");
+
+			if (fundedOpt.isEmpty()) {
+				return ResponseEntity.status(HttpStatus.NOT_FOUND)
+						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "No funded info found to delete"));
+			}
+
+			// Step 4: Soft delete
+			FundedInfo funded = fundedOpt.get();
+			funded.setDelFlag("Y");
+			funded.setUpdatedDate(LocalDateTime.now());
+			fundedInfoRepository.save(funded);
+
+			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Funded info soft deleted successfully"));
+
+		} catch (Exception e) {
 			e.printStackTrace();
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
-							"Failed to retrieve application count: " + e.getMessage(), null));
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<>(
+					HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to delete funded info: " + e.getMessage()));
 		}
 	}
 
