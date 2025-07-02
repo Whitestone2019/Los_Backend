@@ -100,7 +100,6 @@ public class AuthController {
 
 	@Autowired
 	private ApprovalProcessFlowRepository flowRepository;
-	
 
 	@Autowired
 	private LinkBankAccountRepository linkedbankaccountRepository;
@@ -888,19 +887,38 @@ public class AuthController {
 	public ResponseEntity<ApiResponse<Map<String, Object>>> applicationdetails(
 			@RequestBody ApplicationDetail applicationdetails) {
 
-		applicationdetails.setDelFlag("N");
-		applicationdetails.setCreatedDate(LocalDateTime.now());
-
 		try {
+			String inputUserId = applicationdetails.getUserId();
+			if (inputUserId == null || inputUserId.isBlank()) {
+				return ResponseEntity.badRequest()
+						.body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Missing userId in request"));
+			}
 
+			// ✅ Check if userId exists in User table
+			Optional<User> user = userRepository.findByUserIdAndDelflg(inputUserId, "N");
+			if (user.isEmpty()) {
+				return ResponseEntity.badRequest()
+						.body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Invalid userId: " + inputUserId));
+			}
+
+			// ✅ Print userId to console
+			System.out.println("User ID from DB: " + user.get().getUserId());
+
+			// ✅ Set other fields
+			applicationdetails.setDelFlag("N");
+			applicationdetails.setCreatedDate(LocalDateTime.now());
+
+			// ✅ Save first to generate ID
 			ApplicationDetail savedDetails = applicationDetailRepository.save(applicationdetails);
 
-			String applicationNumber = savedDetails.getUserId() + "-" + savedDetails.getId();
+			// ✅ Generate application number (e.g., USR004-12)
+			String applicationNumber = inputUserId + "-" + savedDetails.getId();
+			savedDetails.setApplicationNumber(applicationNumber);
 
-			savedDetails.setApplicationnumber(applicationNumber);
-			applicationDetailRepository.save(savedDetails); // Save updated applicationNumber
+			// ✅ Save updated application number
+			applicationDetailRepository.save(savedDetails);
 
-			// Step 4: Prepare response
+			// ✅ Prepare response
 			Map<String, Object> responseData = new HashMap<>();
 			responseData.put("id", savedDetails.getId());
 			responseData.put("userId", savedDetails.getUserId());
@@ -908,9 +926,9 @@ public class AuthController {
 
 			return ResponseEntity.ok(
 					new ApiResponse<>(HttpStatus.OK.value(), "Application details saved successfully", responseData));
+
 		} catch (Exception e) {
 			e.printStackTrace();
-
 			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<>(
 					HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to save application details: " + e.getMessage()));
 		}
@@ -932,7 +950,7 @@ public class AuthController {
 			// Application block only
 			Map<String, Object> applicationData = new LinkedHashMap<>();
 			applicationData.put("applicationId", app.getId());
-			applicationData.put("applicationNumber", app.getApplicationnumber());
+			applicationData.put("applicationNumber", app.getApplicationNumber());
 			applicationData.put("dateOfBirth", app.getDateOfBirth());
 			applicationData.put("monthlyGrossIncome", app.getMonthlyGrossIncome());
 			applicationData.put("ssn", app.getSsn());
@@ -1010,12 +1028,12 @@ public class AuthController {
 		try {
 			// Step 1: Validate input
 			if (incoming.getApplicationDetail() == null
-					|| incoming.getApplicationDetail().getApplicationnumber() == null) {
+					|| incoming.getApplicationDetail().getApplicationNumber() == null) {
 				return ResponseEntity.badRequest().body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(),
 						"Application number must not be null.", null));
 			}
 
-			String applicationNumber = incoming.getApplicationDetail().getApplicationnumber();
+			String applicationNumber = incoming.getApplicationDetail().getApplicationNumber();
 
 			// Step 2: Fetch ApplicationDetail (along with User)
 			ApplicationDetail application = applicationDetailRepository
@@ -1059,7 +1077,7 @@ public class AuthController {
 
 			// Step 6: Prepare response
 			response.put("accountId", saved.getId());
-			response.put("applicationNumber", application.getApplicationnumber());
+			response.put("applicationNumber", application.getApplicationNumber());
 			response.put("loanType", application.getLonetype());
 			response.put("delFlag", saved.getDelFlag());
 
@@ -1340,7 +1358,7 @@ public class AuthController {
 						"Application and user info must not be null.", null));
 			}
 
-			String applicationNumber = incoming.getApplicationDetail().getApplicationnumber();
+			String applicationNumber = incoming.getApplicationDetail().getApplicationNumber();
 			String userId = incoming.getUser().getUserId();
 
 			// Step 2: Fetch application and user (read-only)
@@ -1368,7 +1386,7 @@ public class AuthController {
 
 			// ✅ Step 4: Set required fields
 			offer.setApplicationDetail(application);
-			offer.setApplicationNumber(application.getApplicationnumber()); // ✅ THIS FIXES YOUR ERROR
+			offer.setApplicationNumber(application.getApplicationNumber()); // ✅ THIS FIXES YOUR ERROR
 			offer.setUser(user);
 			offer.setLoanAmount(incoming.getLoanAmount());
 			offer.setTenureMonths(incoming.getTenureMonths());
@@ -1748,7 +1766,7 @@ public class AuthController {
 						// Application Info
 						Map<String, Object> applicationData = new LinkedHashMap<>();
 						applicationData.put("applicationId", app.getId());
-						applicationData.put("applicationNumber", app.getApplicationnumber());
+						applicationData.put("applicationNumber", app.getApplicationNumber());
 						applicationData.put("dateOfBirth", app.getDateOfBirth());
 						applicationData.put("monthlyGrossIncome", app.getMonthlyGrossIncome());
 						applicationData.put("ssn", app.getSsn());
@@ -1781,7 +1799,7 @@ public class AuthController {
 
 						// Linked Bank Accounts
 						List<LinkBankAccount> bankAccounts = linkedbankaccountRepository
-								.findByApplicationDetail_ApplicationNumberAndDelFlag(app.getApplicationnumber(), "N");
+								.findByApplicationDetail_ApplicationNumberAndDelFlag(app.getApplicationNumber(), "N");
 						if (!bankAccounts.isEmpty()) {
 							List<Map<String, Object>> bankList = new ArrayList<>();
 							for (LinkBankAccount bank : bankAccounts) {
@@ -1802,7 +1820,7 @@ public class AuthController {
 						// Document Verifications
 						if (user != null) {
 							List<DocumentVerification> documents = documentVerificationRepository
-									.findByApplicationNumberAndUser_UserIdAndDelFlag(app.getApplicationnumber(),
+									.findByApplicationNumberAndUser_UserIdAndDelFlag(app.getApplicationNumber(),
 											user.getUserId(), "N");
 							if (!documents.isEmpty()) {
 								List<Map<String, Object>> docList = new ArrayList<>();
@@ -1827,7 +1845,7 @@ public class AuthController {
 						if (user != null) {
 							Optional<AcceptOffer> offerOpt = acceptOfferRepository
 									.findByApplicationDetail_ApplicationNumberAndUser_UserIdAndDelFlag(
-											app.getApplicationnumber(), user.getUserId(), "N");
+											app.getApplicationNumber(), user.getUserId(), "N");
 							offerOpt.ifPresent(offer -> {
 								Map<String, Object> offerData = new LinkedHashMap<>();
 								offerData.put("offerId", offer.getId());
@@ -1844,7 +1862,7 @@ public class AuthController {
 						// Review & Agreement
 						if (user != null) {
 							Optional<ReviewAndAgreement> agreementOpt = reviewAndAgreementRepository
-									.findByApplicationNumberAndUserIdAndDelFlag(app.getApplicationnumber(),
+									.findByApplicationNumberAndUserIdAndDelFlag(app.getApplicationNumber(),
 											user.getUserId(), "N");
 							agreementOpt.ifPresent(agreement -> {
 								Map<String, Object> agreementData = new LinkedHashMap<>();
@@ -1865,7 +1883,7 @@ public class AuthController {
 						// Funded Info
 						if (user != null) {
 							Optional<FundedInfo> fundedOpt = fundedInfoRepository
-									.findByApplicationNumberAndUserIdAndDelFlag(app.getApplicationnumber(),
+									.findByApplicationNumberAndUserIdAndDelFlag(app.getApplicationNumber(),
 											user.getUserId(), "N");
 							fundedOpt.ifPresent(funded -> {
 								Map<String, Object> fundedData = new LinkedHashMap<>();
@@ -1963,7 +1981,7 @@ public class AuthController {
 			// Application block
 			Map<String, Object> applicationData = new LinkedHashMap<>();
 			applicationData.put("applicationId", app.getId());
-			applicationData.put("applicationNumber", app.getApplicationnumber());
+			applicationData.put("applicationNumber", app.getApplicationNumber());
 			applicationData.put("dateOfBirth", app.getDateOfBirth());
 			applicationData.put("monthlyGrossIncome", app.getMonthlyGrossIncome());
 			applicationData.put("ssn", app.getSsn());
@@ -2144,6 +2162,72 @@ public class AuthController {
 			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<>(
 					HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to delete funded info: " + e.getMessage()));
 		}
+	}
+
+	@PutMapping("/update_userdeatils/{userId}")
+	public ResponseEntity<ApiResponse<String>> updateUserdeatils(@PathVariable String userId,
+			@RequestBody Map<String, String> request) {
+
+		Optional<User> optionalUser = userRepository.findByUserIdAndDelflg(userId, "N");
+
+		if (optionalUser.isEmpty()) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND)
+					.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found with ID: " + userId));
+		}
+
+		User user = optionalUser.get();
+
+		// Extract fields from request map
+		String email = request.get("email");
+		String firstName = request.get("firstName");
+		String lastName = request.get("lastName");
+		String phone = request.get("phone");
+		String password = request.get("password");
+		String roleIdStr = request.get("roleId");
+
+		if (email != null)
+			user.setEmail(email);
+		if (firstName != null)
+			user.setFirstName(firstName);
+		if (lastName != null)
+			user.setLastName(lastName);
+		if (phone != null)
+			user.setPhone(phone);
+
+		if (password != null && !password.isBlank()) {
+			user.setPasswordHash(BCrypt.withDefaults().hashToString(12, password.toCharArray()));
+		}
+
+		if (roleIdStr != null) {
+			try {
+				Long roleId = Long.parseLong(roleIdStr);
+				Role role = roleRepository.findById(roleId).orElse(null);
+				if (role != null) {
+					user.setRole(role);
+				}
+			} catch (NumberFormatException ignored) {
+			}
+		}
+
+		userRepository.save(user);
+		return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "User updated successfully"));
+	}
+
+	@DeleteMapping("/delete-userdeatils/{userId}")
+	public ResponseEntity<ApiResponse<String>> deleteAccount(@PathVariable String userId) {
+		Optional<User> optionalUser = userRepository.findByUserIdAndDelflg(userId, "N");
+
+		if (optionalUser.isEmpty()) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND)
+					.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found with ID: " + userId));
+		}
+
+		User user = optionalUser.get();
+		user.setDelflg("Y");
+		user.setActive(false);
+		userRepository.save(user);
+
+		return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "User deleted (soft delete) successfully"));
 	}
 
 }
