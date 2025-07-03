@@ -2229,5 +2229,45 @@ public class AuthController {
 
 		return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "User deleted (soft delete) successfully"));
 	}
+	
+	@PutMapping("/update_lonetype/{applicationNumber}")
+	public ResponseEntity<ApiResponse<String>> updateLoanType(
+	        @PathVariable String applicationNumber,
+	        @RequestBody Map<String, String> requestBody) {
+ 
+	    try {
+	       
+	        String lonetype = requestBody.get("lonetype");
+ 
+	        if (lonetype == null || lonetype.trim().isEmpty()) {
+	            return ResponseEntity.badRequest().body(
+	                new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Loan type must not be empty", null));
+	        }
+ 
+	        
+	        ApplicationDetail app = applicationDetailRepository.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+ 
+	        if (app == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+	                    .body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+	                            "Application not found with application number: " + applicationNumber, null));
+	        }
+ 
+	        
+	        app.setLonetype(lonetype);
+	        app.setUpdatedDate(LocalDateTime.now());
+ 
+	        applicationDetailRepository.save(app);
+ 
+	        return ResponseEntity.ok(
+	                new ApiResponse<>(HttpStatus.OK.value(), "Loan type updated successfully", null));
+ 
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+	                new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "Error updating loan type: " + e.getMessage(), null));
+	    }
+	}
 
 }
