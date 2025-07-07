@@ -2230,7 +2230,7 @@ public class AuthController {
 		return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "User deleted (soft delete) successfully"));
 	}
 	
-	@PutMapping("/update_lonetype/{applicationNumber}")
+	@PutMapping("/update_loantype/{applicationNumber}")
 	public ResponseEntity<ApiResponse<String>> updateLoanType(
 	        @PathVariable String applicationNumber,
 	        @RequestBody Map<String, String> requestBody) {
