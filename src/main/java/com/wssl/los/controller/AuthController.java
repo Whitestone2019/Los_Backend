@@ -769,16 +769,38 @@ public class AuthController {
 	@PostMapping("/loan-type/save")
 	public ResponseEntity<ApiResponse<String>> saveLoanType(@RequestBody LoanType loanType) {
 	    Optional<LoanType> existing = loanTypeRepository.findByLoanType(loanType.getLoanType());
-	    
+
 	    if (existing.isPresent()) {
 	        LoanType update = existing.get();
 	        update.setDescription(loanType.getDescription());
-	        update.setApprovalSetup(loanType.getApprovalSetup()); // update approval setup
+	        update.setApprovalSetup(loanType.getApprovalSetup()); // Optional: only if needed
 	        loanTypeRepository.save(update);
 	        return ResponseEntity.ok(new ApiResponse<>(200, "Loan type updated successfully", null));
 	    } else {
 	        loanTypeRepository.save(loanType);
 	        return ResponseEntity.ok(new ApiResponse<>(200, "Loan type saved successfully", null));
+	    }
+	}
+
+	@PutMapping("/loan-type/update-approval-setup/{loanType}")
+	public ResponseEntity<ApiResponse<String>> updateApprovalSetup(@PathVariable String loanType,
+	                                                               @RequestBody Map<String, String> requestBody) {
+	    String approvalSetup = requestBody.get("approvalSetup");
+
+	    if (approvalSetup == null || approvalSetup.isBlank()) {
+	        return ResponseEntity.badRequest().body(
+	                new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Approval setup is required", null));
+	    }
+
+	    Optional<LoanType> existing = loanTypeRepository.findByLoanType(loanType);
+	    if (existing.isPresent()) {
+	        LoanType update = existing.get();
+	        update.setApprovalSetup(approvalSetup);
+	        loanTypeRepository.save(update);
+	        return ResponseEntity.ok(new ApiResponse<>(200, "Approval setup updated successfully", null));
+	    } else {
+	        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Loan type not found", null));
 	    }
 	}
 
@@ -2238,11 +2260,11 @@ public class AuthController {
 	public ResponseEntity<ApiResponse<Map<String, Object>>> addLoanType(@RequestBody LoanTypeWorkflow loanTypeRequest) {
 	    try {
 	        // ? Check if loanType already exists
-	        Optional<LoanTypeWorkflow> existing = loanTypeWorkflowRepository.findByLoanType(loanTypeRequest.getLoanType());
-	        if (existing.isPresent()) {
-	            return ResponseEntity.status(HttpStatus.CONFLICT).body(
-	                new ApiResponse<>(HttpStatus.CONFLICT.value(), "Loan type already exists", null));
-	        }
+//	        Optional<LoanTypeWorkflow> existing = loanTypeWorkflowRepository.findByLoanType(loanTypeRequest.getLoanType());
+//	        if (existing.isPresent()) {
+//	            return ResponseEntity.status(HttpStatus.CONFLICT).body(
+//	                new ApiResponse<>(HttpStatus.CONFLICT.value(), "Loan type already exists", null));
+//	        }
 
 	        // ? Validate userId
 	        String userId = loanTypeRequest.getUserId();
