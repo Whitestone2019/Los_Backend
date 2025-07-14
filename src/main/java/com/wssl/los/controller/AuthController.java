@@ -31,6 +31,8 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wssl.los.model.AcceptOffer;
 import com.wssl.los.model.ApiResponse;
 import com.wssl.los.model.ApplicationDetail;
@@ -49,6 +51,7 @@ import com.wssl.los.model.User;
 import com.wssl.los.repository.AcceptOfferRepository;
 import com.wssl.los.repository.ApplicationDetailRepository;
 import com.wssl.los.repository.ApprovalProcessFlowRepository;
+import com.wssl.los.repository.ApprovalStep;
 import com.wssl.los.repository.DocumentverificationRepository;
 import com.wssl.los.repository.FundedRepository;
 import com.wssl.los.repository.LinkBankAccountRepository;
@@ -784,18 +787,18 @@ public class AuthController {
 
 	@PutMapping("/loan-type/update-approval-setup/{loanType}")
 	public ResponseEntity<ApiResponse<String>> updateApprovalSetup(@PathVariable String loanType,
-	                                                               @RequestBody Map<String, String> requestBody) {
-	    String approvalSetup = requestBody.get("approvalSetup");
-
-	    if (approvalSetup == null || approvalSetup.isBlank()) {
-	        return ResponseEntity.badRequest().body(
-	                new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Approval setup is required", null));
-	    }
-
+	                                                               @RequestBody List<ApprovalStep> approvalSteps) {
 	    Optional<LoanType> existing = loanTypeRepository.findByLoanType(loanType);
 	    if (existing.isPresent()) {
 	        LoanType update = existing.get();
-	        update.setApprovalSetup(approvalSetup);
+	        String approvalSetupJson = null;
+			try {
+				approvalSetupJson = new ObjectMapper().writeValueAsString(approvalSteps);
+			} catch (JsonProcessingException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+	        update.setApprovalSetup(approvalSetupJson);
 	        loanTypeRepository.save(update);
 	        return ResponseEntity.ok(new ApiResponse<>(200, "Approval setup updated successfully", null));
 	    } else {
@@ -803,6 +806,7 @@ public class AuthController {
 	                new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Loan type not found", null));
 	    }
 	}
+
 
 
 	// Get All Loan Types
