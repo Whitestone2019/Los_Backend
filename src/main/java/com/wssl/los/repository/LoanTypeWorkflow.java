@@ -29,7 +29,7 @@ public class LoanTypeWorkflow {
     @JoinColumn(name = "user_id", referencedColumnName = "user_id", insertable = false, updatable = false)
     private User user;
     
-    @Column(name = "loan_type", unique = true, nullable = false)
+    @Column(name = "loan_type", nullable = false)
     private String loanType;
     
     @Column(name = "application_number", unique = true)

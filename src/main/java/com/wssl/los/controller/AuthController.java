@@ -810,10 +810,7 @@ public class AuthController {
 	    }
 	}
 
-
-
-
-
+	
 	// Get All Loan Types
 	@GetMapping("/loan-types")
 	public ResponseEntity<ApiResponse<List<LoanType>>> getAllLoanTypes() {
