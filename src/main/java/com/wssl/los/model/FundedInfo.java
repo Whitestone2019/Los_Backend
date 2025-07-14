@@ -5,6 +5,8 @@ import jakarta.persistence.*;
 import java.time.LocalDate;
 
 import java.time.LocalDateTime;
+
+import com.wssl.los.repository.LoanTypeWorkflow;
  
 @Entity
 
@@ -24,7 +26,7 @@ public class FundedInfo {
 
     @JoinColumn(name = "application_id", nullable = false)
 
-    private ApplicationDetail applicationDetail;
+    private LoanTypeWorkflow applicationDetail;
  
     @Column(name = "application_number", nullable = false)
 
@@ -65,152 +67,106 @@ public class FundedInfo {
     @Column(name = "del_flag", nullable = false, length = 1)
 
     private String delFlag = "N";
+
+	public Long getId() {
+		return id;
+	}
+
+	public void setId(Long id) {
+		this.id = id;
+	}
+
+	public LoanTypeWorkflow getApplicationDetail() {
+		return applicationDetail;
+	}
+
+	public void setApplicationDetail(LoanTypeWorkflow applicationDetail) {
+		this.applicationDetail = applicationDetail;
+	}
+
+	public String getApplicationNumber() {
+		return applicationNumber;
+	}
+
+	public void setApplicationNumber(String applicationNumber) {
+		this.applicationNumber = applicationNumber;
+	}
+
+	public String getUserId() {
+		return userId;
+	}
+
+	public void setUserId(String userId) {
+		this.userId = userId;
+	}
+
+	public Double getFundingAmount() {
+		return fundingAmount;
+	}
+
+	public void setFundingAmount(Double fundingAmount) {
+		this.fundingAmount = fundingAmount;
+	}
+
+	public LocalDate getFundingDate() {
+		return fundingDate;
+	}
+
+	public void setFundingDate(LocalDate fundingDate) {
+		this.fundingDate = fundingDate;
+	}
+
+	public Boolean getConfirmFunding() {
+		return confirmFunding;
+	}
+
+	public void setConfirmFunding(Boolean confirmFunding) {
+		this.confirmFunding = confirmFunding;
+	}
+
+	public String getCreatedBy() {
+		return createdBy;
+	}
+
+	public void setCreatedBy(String createdBy) {
+		this.createdBy = createdBy;
+	}
+
+	public LocalDateTime getCreatedDate() {
+		return createdDate;
+	}
+
+	public void setCreatedDate(LocalDateTime createdDate) {
+		this.createdDate = createdDate;
+	}
+
+	public String getUpdatedBy() {
+		return updatedBy;
+	}
+
+	public void setUpdatedBy(String updatedBy) {
+		this.updatedBy = updatedBy;
+	}
+
+	public LocalDateTime getUpdatedDate() {
+		return updatedDate;
+	}
+
+	public void setUpdatedDate(LocalDateTime updatedDate) {
+		this.updatedDate = updatedDate;
+	}
+
+	public String getDelFlag() {
+		return delFlag;
+	}
+
+	public void setDelFlag(String delFlag) {
+		this.delFlag = delFlag;
+	}
  
     // ---------- Getters & Setters ----------
  
-    public Long getId() {
-
-        return id;
-
-    }
- 
-    public void setId(Long id) {
-
-        this.id = id;
-
-    }
- 
-    public ApplicationDetail getApplicationDetail() {
-
-        return applicationDetail;
-
-    }
- 
-    public void setApplicationDetail(ApplicationDetail applicationDetail) {
-
-        this.applicationDetail = applicationDetail;
-
-    }
- 
-    public String getApplicationNumber() {
-
-        return applicationNumber;
-
-    }
- 
-    public void setApplicationNumber(String applicationNumber) {
-
-        this.applicationNumber = applicationNumber;
-
-    }
- 
-    public String getUserId() {
-
-        return userId;
-
-    }
- 
-    public void setUserId(String userId) {
-
-        this.userId = userId;
-
-    }
- 
-    public Double getFundingAmount() {
-
-        return fundingAmount;
-
-    }
- 
-    public void setFundingAmount(Double fundingAmount) {
-
-        this.fundingAmount = fundingAmount;
-
-    }
- 
-    public LocalDate getFundingDate() {
-
-        return fundingDate;
-
-    }
- 
-    public void setFundingDate(LocalDate fundingDate) {
-
-        this.fundingDate = fundingDate;
-
-    }
- 
-    public Boolean getConfirmFunding() {
-
-        return confirmFunding;
-
-    }
- 
-    public void setConfirmFunding(Boolean confirmFunding) {
-
-        this.confirmFunding = confirmFunding;
-
-    }
- 
-    public String getCreatedBy() {
-
-        return createdBy;
-
-    }
- 
-    public void setCreatedBy(String createdBy) {
-
-        this.createdBy = createdBy;
-
-    }
- 
-    public LocalDateTime getCreatedDate() {
-
-        return createdDate;
-
-    }
- 
-    public void setCreatedDate(LocalDateTime createdDate) {
-
-        this.createdDate = createdDate;
-
-    }
- 
-    public String getUpdatedBy() {
-
-        return updatedBy;
-
-    }
- 
-    public void setUpdatedBy(String updatedBy) {
-
-        this.updatedBy = updatedBy;
-
-    }
- 
-    public LocalDateTime getUpdatedDate() {
-
-        return updatedDate;
-
-    }
- 
-    public void setUpdatedDate(LocalDateTime updatedDate) {
-
-        this.updatedDate = updatedDate;
-
-    }
- 
-    public String getDelFlag() {
-
-        return delFlag;
-
-    }
- 
-    public void setDelFlag(String delFlag) {
-
-        this.delFlag = delFlag;
-
-    }
+   
 
 }
 

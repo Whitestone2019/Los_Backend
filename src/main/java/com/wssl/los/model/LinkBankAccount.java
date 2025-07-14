@@ -2,6 +2,8 @@ package com.wssl.los.model;
 
 import java.time.LocalDateTime;
 
+import com.wssl.los.repository.LoanTypeWorkflow;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -22,10 +24,9 @@ public class LinkBankAccount {
 	@JoinColumn(name = "user_id", referencedColumnName = "user_id")
 	private User user;
 
-	// Link to ApplicationDetail
 	@ManyToOne
 	@JoinColumn(name = "application_id", referencedColumnName = "id")
-	private ApplicationDetail applicationDetail;
+	private LoanTypeWorkflow applicationDetail;
 
 	@Column(name = "account_holder_name", nullable = false)
 	private String accountHolderName;
@@ -70,11 +71,11 @@ public class LinkBankAccount {
 		this.user = user;
 	}
 
-	public ApplicationDetail getApplicationDetail() {
+	public LoanTypeWorkflow getApplicationDetail() {
 		return applicationDetail;
 	}
 
-	public void setApplicationDetail(ApplicationDetail applicationDetail) {
+	public void setApplicationDetail(LoanTypeWorkflow applicationDetail) {
 		this.applicationDetail = applicationDetail;
 	}
 
@@ -150,7 +151,6 @@ public class LinkBankAccount {
 		this.delFlag = delFlag;
 	}
 
-	// Getters and Setters
-
+	
 	
 }

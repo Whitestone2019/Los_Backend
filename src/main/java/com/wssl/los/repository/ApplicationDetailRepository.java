@@ -9,8 +9,9 @@ import com.wssl.los.model.DocumentVerification;
 @Repository
 public interface ApplicationDetailRepository extends JpaRepository<ApplicationDetail, Long> {
 	ApplicationDetail save(ApplicationDetail userDetails);
-	ApplicationDetail findByApplicationNumberAndDelFlag(String applicationNumber, String delFlag);
+//	ApplicationDetail findByApplicationNumberAndDelFlag(String applicationNumber, String delFlag);
 	long countByDelFlag(String string);
+	ApplicationDetail findByUserIdAndDelFlag(String userId, String delFlag);
 
 
 }

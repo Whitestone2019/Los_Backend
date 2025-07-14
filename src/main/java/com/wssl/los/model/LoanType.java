@@ -1,15 +1,9 @@
 package com.wssl.los.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 
 @Entity
 @Table(name = "loan_type_master")
-
 public class LoanType {
 
     @Id
@@ -22,29 +16,40 @@ public class LoanType {
     @Column(name = "description", nullable = false)
     private String description;
 
-	public Long getId() {
-		return id;
-	}
+    @Lob
+    @Column(name = "approval_setup", columnDefinition = "TEXT")
+    private String approvalSetup; // stores JSON string
 
-	public void setId(Long id) {
-		this.id = id;
-	}
+    // Getters & Setters
+    public Long getId() {
+        return id;
+    }
 
-	public String getLoanType() {
-		return loanType;
-	}
+    public void setId(Long id) {
+        this.id = id;
+    }
 
-	public void setLoanType(String loanType) {
-		this.loanType = loanType;
-	}
+    public String getLoanType() {
+        return loanType;
+    }
 
-	public String getDescription() {
-		return description;
-	}
+    public void setLoanType(String loanType) {
+        this.loanType = loanType;
+    }
 
-	public void setDescription(String description) {
-		this.description = description;
-	}
-    
-    
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getApprovalSetup() {
+        return approvalSetup;
+    }
+
+    public void setApprovalSetup(String approvalSetup) {
+        this.approvalSetup = approvalSetup;
+    }
 }

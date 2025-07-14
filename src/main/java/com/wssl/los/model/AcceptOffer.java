@@ -3,7 +3,9 @@ package com.wssl.los.model;
 import java.math.BigDecimal;
 
 import java.time.LocalDateTime;
- 
+
+import com.wssl.los.repository.LoanTypeWorkflow;
+
 import jakarta.persistence.*;
  
 @Entity
@@ -20,7 +22,7 @@ public class AcceptOffer {
 
     @JoinColumn(name = "application_id")
 
-    private ApplicationDetail applicationDetail;
+    private LoanTypeWorkflow applicationDetail;
  
     @Column(name = "application_number", nullable = false)
 
@@ -61,140 +63,98 @@ public class AcceptOffer {
     @Column(name = "created_at", nullable = false)
 
     private LocalDateTime createdAt = LocalDateTime.now();
+
+	public Long getId() {
+		return id;
+	}
+
+	public void setId(Long id) {
+		this.id = id;
+	}
+
+	public LoanTypeWorkflow getApplicationDetail() {
+		return applicationDetail;
+	}
+
+	public void setApplicationDetail(LoanTypeWorkflow applicationDetail) {
+		this.applicationDetail = applicationDetail;
+	}
+
+	public String getApplicationNumber() {
+		return applicationNumber;
+	}
+
+	public void setApplicationNumber(String applicationNumber) {
+		this.applicationNumber = applicationNumber;
+	}
+
+	public User getUser() {
+		return user;
+	}
+
+	public void setUser(User user) {
+		this.user = user;
+	}
+
+	public BigDecimal getLoanAmount() {
+		return loanAmount;
+	}
+
+	public void setLoanAmount(BigDecimal loanAmount) {
+		this.loanAmount = loanAmount;
+	}
+
+	public Integer getTenureMonths() {
+		return tenureMonths;
+	}
+
+	public void setTenureMonths(Integer tenureMonths) {
+		this.tenureMonths = tenureMonths;
+	}
+
+	public Double getInterestRate() {
+		return interestRate;
+	}
+
+	public void setInterestRate(Double interestRate) {
+		this.interestRate = interestRate;
+	}
+
+	public BigDecimal getEstimatedEmi() {
+		return estimatedEmi;
+	}
+
+	public void setEstimatedEmi(BigDecimal estimatedEmi) {
+		this.estimatedEmi = estimatedEmi;
+	}
+
+	public Boolean getConsentGiven() {
+		return consentGiven;
+	}
+
+	public void setConsentGiven(Boolean consentGiven) {
+		this.consentGiven = consentGiven;
+	}
+
+	public String getDelFlag() {
+		return delFlag;
+	}
+
+	public void setDelFlag(String delFlag) {
+		this.delFlag = delFlag;
+	}
+
+	public LocalDateTime getCreatedAt() {
+		return createdAt;
+	}
+
+	public void setCreatedAt(LocalDateTime createdAt) {
+		this.createdAt = createdAt;
+	}
  
     // ------------------- Getters and Setters -------------------
  
-    public Long getId() {
-
-        return id;
-
-    }
- 
-    public void setId(Long id) {
-
-        this.id = id;
-
-    }
- 
-    public String getApplicationNumber() {
-
-        return applicationNumber;
-
-    }
- 
-    public void setApplicationNumber(String applicationNumber) {
-
-        this.applicationNumber = applicationNumber;
-
-    }
- 
-    public ApplicationDetail getApplicationDetail() {
-
-        return applicationDetail;
-
-    }
- 
-    public void setApplicationDetail(ApplicationDetail applicationDetail) {
-
-        this.applicationDetail = applicationDetail;
-
-    }
- 
-    public User getUser() {
-
-        return user;
-
-    }
- 
-    public void setUser(User user) {
-
-        this.user = user;
-
-    }
- 
-    public BigDecimal getLoanAmount() {
-
-        return loanAmount;
-
-    }
- 
-    public void setLoanAmount(BigDecimal loanAmount) {
-
-        this.loanAmount = loanAmount;
-
-    }
- 
-    public Integer getTenureMonths() {
-
-        return tenureMonths;
-
-    }
- 
-    public void setTenureMonths(Integer tenureMonths) {
-
-        this.tenureMonths = tenureMonths;
-
-    }
- 
-    public Double getInterestRate() {
-
-        return interestRate;
-
-    }
- 
-    public void setInterestRate(Double interestRate) {
-
-        this.interestRate = interestRate;
-
-    }
- 
-    public BigDecimal getEstimatedEmi() {
-
-        return estimatedEmi;
-
-    }
- 
-    public void setEstimatedEmi(BigDecimal estimatedEmi) {
-
-        this.estimatedEmi = estimatedEmi;
-
-    }
- 
-    public Boolean getConsentGiven() {
-
-        return consentGiven;
-
-    }
- 
-    public void setConsentGiven(Boolean consentGiven) {
-
-        this.consentGiven = consentGiven;
-
-    }
- 
-    public String getDelFlag() {
-
-        return delFlag;
-
-    }
- 
-    public void setDelFlag(String delFlag) {
-
-        this.delFlag = delFlag;
-
-    }
- 
-    public LocalDateTime getCreatedAt() {
-
-        return createdAt;
-
-    }
- 
-    public void setCreatedAt(LocalDateTime createdAt) {
-
-        this.createdAt = createdAt;
-
-    }
+   
 
 }
 

@@ -53,6 +53,8 @@ import com.wssl.los.repository.DocumentverificationRepository;
 import com.wssl.los.repository.FundedRepository;
 import com.wssl.los.repository.LinkBankAccountRepository;
 import com.wssl.los.repository.LoanTypeRepository;
+import com.wssl.los.repository.LoanTypeWorkflow;
+import com.wssl.los.repository.LoanTypeWorkflowRepository;
 import com.wssl.los.repository.MenuRepository;
 import com.wssl.los.repository.OrganizationRepository;
 import com.wssl.los.repository.OtpRepository;
@@ -97,6 +99,9 @@ public class AuthController {
 
 	@Autowired
 	private LoanTypeRepository loanTypeRepository;
+	
+	@Autowired
+	private LoanTypeWorkflowRepository loanTypeWorkflowRepository;
 
 	@Autowired
 	private ApprovalProcessFlowRepository flowRepository;
@@ -763,17 +768,20 @@ public class AuthController {
 	// Save Loan Type
 	@PostMapping("/loan-type/save")
 	public ResponseEntity<ApiResponse<String>> saveLoanType(@RequestBody LoanType loanType) {
-		Optional<LoanType> existing = loanTypeRepository.findByLoanType(loanType.getLoanType());
-		if (existing.isPresent()) {
-			LoanType update = existing.get();
-			update.setDescription(loanType.getDescription());
-			loanTypeRepository.save(update);
-			return ResponseEntity.ok(new ApiResponse<>(200, "Loan type updated successfully", null));
-		} else {
-			loanTypeRepository.save(loanType);
-			return ResponseEntity.ok(new ApiResponse<>(200, "Loan type saved successfully", null));
-		}
+	    Optional<LoanType> existing = loanTypeRepository.findByLoanType(loanType.getLoanType());
+	    
+	    if (existing.isPresent()) {
+	        LoanType update = existing.get();
+	        update.setDescription(loanType.getDescription());
+	        update.setApprovalSetup(loanType.getApprovalSetup()); // update approval setup
+	        loanTypeRepository.save(update);
+	        return ResponseEntity.ok(new ApiResponse<>(200, "Loan type updated successfully", null));
+	    } else {
+	        loanTypeRepository.save(loanType);
+	        return ResponseEntity.ok(new ApiResponse<>(200, "Loan type saved successfully", null));
+	    }
 	}
+
 
 	// Get All Loan Types
 	@GetMapping("/loan-types")
@@ -911,10 +919,6 @@ public class AuthController {
 			// ✅ Save first to generate ID
 			ApplicationDetail savedDetails = applicationDetailRepository.save(applicationdetails);
 
-			// ✅ Generate application number (e.g., USR004-12)
-			String applicationNumber = inputUserId + "-" + savedDetails.getId();
-			savedDetails.setApplicationNumber(applicationNumber);
-
 			// ✅ Save updated application number
 			applicationDetailRepository.save(savedDetails);
 
@@ -922,7 +926,6 @@ public class AuthController {
 			Map<String, Object> responseData = new HashMap<>();
 			responseData.put("id", savedDetails.getId());
 			responseData.put("userId", savedDetails.getUserId());
-			responseData.put("applicationNumber", applicationNumber);
 
 			return ResponseEntity.ok(
 					new ApiResponse<>(HttpStatus.OK.value(), "Application details saved successfully", responseData));
@@ -934,50 +937,74 @@ public class AuthController {
 		}
 	}
 
-	@GetMapping("/get_applicationdetailsonly/{applicationNumber}")
+	@GetMapping("/get_applicationdetailsonly_by_user/{userId}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getApplicationOnlyByUser(@PathVariable String userId) {
+	    try {
+	        // Fetch ApplicationDetail by userId and delFlag = 'N'
+	        ApplicationDetail app = applicationDetailRepository.findByUserIdAndDelFlag(userId, "N");
 
-	public ResponseEntity<ApiResponse<Map<String, Object>>> getApplicationOnly(@PathVariable String applicationNumber) {
-		try {
-			// Check if application exists
-			ApplicationDetail app = applicationDetailRepository.findByApplicationNumberAndDelFlag(applicationNumber,
-					"N");
+	        if (app == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+	                .body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application details not found for user", null));
+	        }
 
-			if (app == null) {
-				return ResponseEntity.status(HttpStatus.NOT_FOUND)
-						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application details not found", null));
-			}
+	        Map<String, Object> applicationData = new LinkedHashMap<>();
+	        applicationData.put("applicationId", app.getId());
+	        applicationData.put("dateOfBirth", app.getDateOfBirth());
+	        applicationData.put("monthlyGrossIncome", app.getMonthlyGrossIncome());
+	        applicationData.put("ssn", app.getSsn());
+	        applicationData.put("confirmSsn", app.getConfirmSsn());
+	        applicationData.put("howMuchDoYouNeed", app.getHowMuchDoYouNeed());
+	        applicationData.put("homeAddress", app.getHomeAddress());
+	        applicationData.put("homeAddress2", app.getHomeAddress2());
+	        applicationData.put("zipCode", app.getZipCode());
+	        applicationData.put("city", app.getCity());
+	        applicationData.put("state", app.getState());
+	        applicationData.put("isHomeOwner", app.getIsHomeOwner());
+	        applicationData.put("createdBy", app.getCreatedBy());
+	        applicationData.put("createdDate", app.getCreatedDate());
+	        applicationData.put("updatedBy", app.getUpdatedBy());
+	        applicationData.put("updatedDate", app.getUpdatedDate());
 
-			// Application block only
-			Map<String, Object> applicationData = new LinkedHashMap<>();
-			applicationData.put("applicationId", app.getId());
-			applicationData.put("applicationNumber", app.getApplicationNumber());
-			applicationData.put("dateOfBirth", app.getDateOfBirth());
-			applicationData.put("monthlyGrossIncome", app.getMonthlyGrossIncome());
-			applicationData.put("ssn", app.getSsn());
-			applicationData.put("confirmSsn", app.getConfirmSsn());
-			applicationData.put("howMuchDoYouNeed", app.getHowMuchDoYouNeed());
-			applicationData.put("homeAddress", app.getHomeAddress());
-			applicationData.put("homeAddress2", app.getHomeAddress2());
-			applicationData.put("zipCode", app.getZipCode());
-			applicationData.put("city", app.getCity());
-			applicationData.put("state", app.getState());
-			applicationData.put("isHomeOwner", app.getIsHomeOwner());
-			applicationData.put("createdBy", app.getCreatedBy());
-			applicationData.put("createdDate", app.getCreatedDate());
-			applicationData.put("updatedBy", app.getUpdatedBy());
-			applicationData.put("updatedDate", app.getUpdatedDate());
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+	            "Application details retrieved successfully", applicationData));
 
-			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
-					"Application details retrieved successfully", applicationData));
-
-		} catch (Exception e) {
-			e.printStackTrace(); // Replace with logger if preferred
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
-							"Error occurred while retrieving application details: " + e.getMessage(), null));
-		}
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	            .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                "Error retrieving application details: " + e.getMessage(), null));
+	    }
 	}
+	
 
+	@DeleteMapping("/delete_application_by_user/{userId}")
+	public ResponseEntity<ApiResponse<String>> deleteApplicationByUserId(@PathVariable String userId) {
+	    try {
+	        // ? Fetch application by userId and delFlag = 'N'
+	        ApplicationDetail application = applicationDetailRepository.findByUserIdAndDelFlag(userId, "N");
+
+	        if (application == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+	                    .body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+	                            "Application not found for userId: " + userId));
+	        }
+
+	        // ? Perform soft delete
+	        application.setDelFlag("Y");
+	        application.setUpdatedDate(LocalDateTime.now());
+	        applicationDetailRepository.save(application);
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+	                "Application soft-deleted successfully for userId: " + userId));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<>(
+	                HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                "Failed to delete application: " + e.getMessage()));
+	    }
+	}
 	@GetMapping("/getapplicationCount")
 	public ResponseEntity<ApiResponse<Long>> getApplicationCount() {
 		try {
@@ -993,32 +1020,6 @@ public class AuthController {
 		}
 	}
 
-	@DeleteMapping("/delete_application_by_number/{applicationNumber}")
-	public ResponseEntity<ApiResponse<String>> deleteApplicationByApplicationNumber(
-			@PathVariable String applicationNumber) {
-		try {
-			// Fetch application by application number and delFlag = 'N'
-			ApplicationDetail application = applicationDetailRepository
-					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
-
-			if (application == null) {
-				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
-						"Application not found with application number: " + applicationNumber));
-			}
-
-			// Soft delete
-			application.setDelFlag("Y");
-			application.setUpdatedDate(LocalDateTime.now());
-			applicationDetailRepository.save(application);
-
-			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
-					"Application soft-deleted successfully with application number: " + applicationNumber));
-		} catch (Exception e) {
-			e.printStackTrace(); // Optional: use logger
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<>(
-					HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to delete application: " + e.getMessage()));
-		}
-	}
 
 	@PostMapping("/addOrUpdate_applicationBankdetails")
 	public ResponseEntity<ApiResponse<Map<String, Object>>> addOrUpdateBankAccount(
@@ -1027,17 +1028,16 @@ public class AuthController {
 
 		try {
 			// Step 1: Validate input
-			if (incoming.getApplicationDetail() == null
+			if (incoming.getApplicationDetail()==null
 					|| incoming.getApplicationDetail().getApplicationNumber() == null) {
 				return ResponseEntity.badRequest().body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(),
 						"Application number must not be null.", null));
 			}
 
-			String applicationNumber = incoming.getApplicationDetail().getApplicationNumber();
+			String applicationNumber= incoming.getApplicationDetail().getApplicationNumber();
 
 			// Step 2: Fetch ApplicationDetail (along with User)
-			ApplicationDetail application = applicationDetailRepository
-					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+			LoanTypeWorkflow application = loanTypeWorkflowRepository.findByApplicationNumberAndDelFlag(applicationNumber, "N");
 
 			if (application == null) {
 				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
@@ -1063,6 +1063,7 @@ public class AuthController {
 			// Step 4: Set values
 			account.setUser(user);
 			account.setApplicationDetail(application);
+			account.setApplicationDetail(application);
 			account.setAccountHolderName(incoming.getAccountHolderName());
 			account.setBankName(incoming.getBankName());
 			account.setAccountNumber(incoming.getAccountNumber());
@@ -1078,7 +1079,7 @@ public class AuthController {
 			// Step 6: Prepare response
 			response.put("accountId", saved.getId());
 			response.put("applicationNumber", application.getApplicationNumber());
-			response.put("loanType", application.getLonetype());
+			response.put("loanType", application.getLoanType());
 			response.put("delFlag", saved.getDelFlag());
 
 			String message = isUpdate ? "Bank account updated successfully." : "Bank account added successfully.";
@@ -1097,7 +1098,7 @@ public class AuthController {
 			@PathVariable String applicationNumber) {
 		try {
 			// Check if application exists and is not deleted
-			ApplicationDetail app = applicationDetailRepository.findByApplicationNumberAndDelFlag(applicationNumber,
+			LoanTypeWorkflow app = loanTypeWorkflowRepository.findByApplicationNumberAndDelFlag(applicationNumber,
 					"N");
 			if (app == null) {
 				return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -1143,7 +1144,7 @@ public class AuthController {
 	public ResponseEntity<ApiResponse<String>> softDeleteLinkedBankAccounts(@PathVariable String applicationNumber) {
 		try {
 			// Step 1: Check if application exists
-			ApplicationDetail application = applicationDetailRepository
+			LoanTypeWorkflow application = loanTypeWorkflowRepository
 					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
 
 			if (application == null) {
@@ -1196,7 +1197,7 @@ public class AuthController {
 			String userId = incoming.getUser().getUserId();
 
 			// Step 2: Fetch application and user (read-only)
-			ApplicationDetail application = applicationDetailRepository
+			LoanTypeWorkflow application = loanTypeWorkflowRepository
 					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
 
 			if (application == null) {
@@ -1260,7 +1261,7 @@ public class AuthController {
 			@PathVariable String applicationNumber) {
 		try {
 			// Step 1: Check application and user
-			ApplicationDetail application = applicationDetailRepository
+			LoanTypeWorkflow application = loanTypeWorkflowRepository
 					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
 			if (application == null || application.getUser() == null) {
 				return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -1304,7 +1305,7 @@ public class AuthController {
 	public ResponseEntity<ApiResponse<String>> Deletedocmentdails(@PathVariable String applicationNumber) {
 		try {
 			// Step 1: Check if application exists
-			ApplicationDetail application = applicationDetailRepository
+			LoanTypeWorkflow application = loanTypeWorkflowRepository
 					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
 
 			if (application == null) {
@@ -1362,7 +1363,7 @@ public class AuthController {
 			String userId = incoming.getUser().getUserId();
 
 			// Step 2: Fetch application and user (read-only)
-			ApplicationDetail application = applicationDetailRepository
+			LoanTypeWorkflow application = loanTypeWorkflowRepository
 					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
 
 			if (application == null) {
@@ -1426,7 +1427,7 @@ public class AuthController {
 			@PathVariable String applicationNumber) {
 		try {
 			// Step 1: Find application
-			ApplicationDetail application = applicationDetailRepository
+			LoanTypeWorkflow application = loanTypeWorkflowRepository
 					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
 			if (application == null || application.getUser() == null) {
 				return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -1469,7 +1470,7 @@ public class AuthController {
 	public ResponseEntity<ApiResponse<String>> deleteAcceptOfferDetails(@PathVariable String applicationNumber) {
 		try {
 			// Step 1: Fetch the application
-			ApplicationDetail application = applicationDetailRepository
+			LoanTypeWorkflow application = loanTypeWorkflowRepository
 					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
 
 			if (application == null) {
@@ -1526,7 +1527,7 @@ public class AuthController {
 
 			// Step 2: Get ApplicationDetail for reference (optional, but useful for
 			// linking)
-			ApplicationDetail appDetail = applicationDetailRepository
+			LoanTypeWorkflow appDetail = loanTypeWorkflowRepository
 					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
 			if (appDetail == null) {
 				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
@@ -1591,7 +1592,7 @@ public class AuthController {
 			@PathVariable String applicationNumber) {
 		try {
 			// Step 1: Fetch application by application number and delFlag
-			ApplicationDetail application = applicationDetailRepository
+			LoanTypeWorkflow application = loanTypeWorkflowRepository
 					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
 
 			if (application == null) {
@@ -1641,7 +1642,7 @@ public class AuthController {
 	public ResponseEntity<ApiResponse<String>> deleteReviewAndSignAgreement(@PathVariable String applicationNumber) {
 		try {
 			// Step 1: Fetch the application
-			ApplicationDetail application = applicationDetailRepository
+			LoanTypeWorkflow application = loanTypeWorkflowRepository
 					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
 
 			if (application == null) {
@@ -1696,7 +1697,7 @@ public class AuthController {
 			String userId = incoming.getUserId();
 
 			// Step 2: Get ApplicationDetail for reference
-			ApplicationDetail appDetail = applicationDetailRepository
+			LoanTypeWorkflow appDetail = loanTypeWorkflowRepository
 					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
 			if (appDetail == null) {
 				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
@@ -1766,7 +1767,7 @@ public class AuthController {
 						// Application Info
 						Map<String, Object> applicationData = new LinkedHashMap<>();
 						applicationData.put("applicationId", app.getId());
-						applicationData.put("applicationNumber", app.getApplicationNumber());
+						//applicationData.put("applicationNumber", app.getApplicationNumber());
 						applicationData.put("dateOfBirth", app.getDateOfBirth());
 						applicationData.put("monthlyGrossIncome", app.getMonthlyGrossIncome());
 						applicationData.put("ssn", app.getSsn());
@@ -1782,7 +1783,7 @@ public class AuthController {
 						applicationData.put("createdDate", app.getCreatedDate());
 						applicationData.put("updatedBy", app.getUpdatedBy());
 						applicationData.put("updatedDate", app.getUpdatedDate());
-						applicationData.put("lonetype", app.getLonetype());
+						//applicationData.put("lonetype", app.getLonetype());
 						responseMap.put("applicationDetails", applicationData);
 
 						// User Info
@@ -1799,7 +1800,7 @@ public class AuthController {
 
 						// Linked Bank Accounts
 						List<LinkBankAccount> bankAccounts = linkedbankaccountRepository
-								.findByApplicationDetail_ApplicationNumberAndDelFlag(app.getApplicationNumber(), "N");
+								.findByApplicationDetail_ApplicationNumberAndDelFlag(app.getUserId(), "N");
 						if (!bankAccounts.isEmpty()) {
 							List<Map<String, Object>> bankList = new ArrayList<>();
 							for (LinkBankAccount bank : bankAccounts) {
@@ -1820,7 +1821,7 @@ public class AuthController {
 						// Document Verifications
 						if (user != null) {
 							List<DocumentVerification> documents = documentVerificationRepository
-									.findByApplicationNumberAndUser_UserIdAndDelFlag(app.getApplicationNumber(),
+									.findByApplicationNumberAndUser_UserIdAndDelFlag(app.getUserId(),
 											user.getUserId(), "N");
 							if (!documents.isEmpty()) {
 								List<Map<String, Object>> docList = new ArrayList<>();
@@ -1845,7 +1846,7 @@ public class AuthController {
 						if (user != null) {
 							Optional<AcceptOffer> offerOpt = acceptOfferRepository
 									.findByApplicationDetail_ApplicationNumberAndUser_UserIdAndDelFlag(
-											app.getApplicationNumber(), user.getUserId(), "N");
+											app.getUserId(), user.getUserId(), "N");
 							offerOpt.ifPresent(offer -> {
 								Map<String, Object> offerData = new LinkedHashMap<>();
 								offerData.put("offerId", offer.getId());
@@ -1862,7 +1863,7 @@ public class AuthController {
 						// Review & Agreement
 						if (user != null) {
 							Optional<ReviewAndAgreement> agreementOpt = reviewAndAgreementRepository
-									.findByApplicationNumberAndUserIdAndDelFlag(app.getApplicationNumber(),
+									.findByApplicationNumberAndUserIdAndDelFlag(app.getUserId(),
 											user.getUserId(), "N");
 							agreementOpt.ifPresent(agreement -> {
 								Map<String, Object> agreementData = new LinkedHashMap<>();
@@ -1883,7 +1884,7 @@ public class AuthController {
 						// Funded Info
 						if (user != null) {
 							Optional<FundedInfo> fundedOpt = fundedInfoRepository
-									.findByApplicationNumberAndUserIdAndDelFlag(app.getApplicationNumber(),
+									.findByApplicationNumberAndUserIdAndDelFlag(app.getUserId(),
 											user.getUserId(), "N");
 							fundedOpt.ifPresent(funded -> {
 								Map<String, Object> fundedData = new LinkedHashMap<>();
@@ -1919,7 +1920,7 @@ public class AuthController {
 			@PathVariable String applicationNumber) {
 		try {
 			// Step 1: Fetch application
-			ApplicationDetail application = applicationDetailRepository
+			LoanTypeWorkflow application = loanTypeWorkflowRepository
 					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
 
 			if (application == null) {
@@ -1968,7 +1969,10 @@ public class AuthController {
 	public ResponseEntity<ApiResponse<Map<String, Object>>> getCompleteApplicationDetails(
 			@PathVariable String applicationNumber) {
 		try {
-			ApplicationDetail app = applicationDetailRepository.findByApplicationNumberAndDelFlag(applicationNumber,
+			
+			LoanTypeWorkflow app1 = loanTypeWorkflowRepository.findByApplicationNumberAndDelFlag(applicationNumber,
+					"N");
+			ApplicationDetail app = applicationDetailRepository.findByUserIdAndDelFlag(app1.getUserId(),
 					"N");
 
 			if (app == null) {
@@ -1981,7 +1985,7 @@ public class AuthController {
 			// Application block
 			Map<String, Object> applicationData = new LinkedHashMap<>();
 			applicationData.put("applicationId", app.getId());
-			applicationData.put("applicationNumber", app.getApplicationNumber());
+			//applicationData.put("applicationNumber", app.getApplicationNumber());
 			applicationData.put("dateOfBirth", app.getDateOfBirth());
 			applicationData.put("monthlyGrossIncome", app.getMonthlyGrossIncome());
 			applicationData.put("ssn", app.getSsn());
@@ -1997,7 +2001,7 @@ public class AuthController {
 			applicationData.put("createdDate", app.getCreatedDate());
 			applicationData.put("updatedBy", app.getUpdatedBy());
 			applicationData.put("updatedDate", app.getUpdatedDate());
-			applicationData.put("lonetype", app.getLonetype());
+		//	applicationData.put("lonetype", app.getLonetype());
 
 			responseData.put("applicationDetails", applicationData);
 
@@ -2126,7 +2130,7 @@ public class AuthController {
 			@PathVariable String applicationNumber) {
 		try {
 			// Step 1: Validate application
-			ApplicationDetail app = applicationDetailRepository.findByApplicationNumberAndDelFlag(applicationNumber,
+			LoanTypeWorkflow app = loanTypeWorkflowRepository.findByApplicationNumberAndDelFlag(applicationNumber,
 					"N");
 			if (app == null) {
 				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
@@ -2230,44 +2234,61 @@ public class AuthController {
 		return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "User deleted (soft delete) successfully"));
 	}
 	
-	@PutMapping("/update_loantype/{applicationNumber}")
-	public ResponseEntity<ApiResponse<String>> updateLoanType(
-	        @PathVariable String applicationNumber,
-	        @RequestBody Map<String, String> requestBody) {
- 
+	@PostMapping("/add_loan_type")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> addLoanType(@RequestBody LoanTypeWorkflow loanTypeRequest) {
 	    try {
-	       
-	        String lonetype = requestBody.get("lonetype");
- 
-	        if (lonetype == null || lonetype.trim().isEmpty()) {
+	        // ? Check if loanType already exists
+	        Optional<LoanTypeWorkflow> existing = loanTypeWorkflowRepository.findByLoanType(loanTypeRequest.getLoanType());
+	        if (existing.isPresent()) {
+	            return ResponseEntity.status(HttpStatus.CONFLICT).body(
+	                new ApiResponse<>(HttpStatus.CONFLICT.value(), "Loan type already exists", null));
+	        }
+
+	        // ? Validate userId
+	        String userId = loanTypeRequest.getUserId();
+	        if (userId == null || userId.isBlank()) {
 	            return ResponseEntity.badRequest().body(
-	                new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Loan type must not be empty", null));
+	                new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Missing or invalid userId", null));
 	        }
- 
-	        
-	        ApplicationDetail app = applicationDetailRepository.findByApplicationNumberAndDelFlag(applicationNumber, "N");
- 
-	        if (app == null) {
-	            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-	                    .body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
-	                            "Application not found with application number: " + applicationNumber, null));
+
+	        Optional<User> userOpt = userRepository.findByUserIdAndDelflg(userId, "N");
+	        if (userOpt.isEmpty()) {
+	            return ResponseEntity.badRequest().body(
+	                new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "User not found for userId: " + userId, null));
 	        }
- 
+
+	        // ? Save initial loan type (without app number)
+	        LoanTypeWorkflow loanType = new LoanTypeWorkflow();
+	        loanType.setLoanType(loanTypeRequest.getLoanType());
+	        loanType.setUserId(userId);
+
+	        LoanTypeWorkflow saved = loanTypeWorkflowRepository.save(loanType);
+
 	        
-	        app.setLonetype(lonetype);
-	        app.setUpdatedDate(LocalDateTime.now());
- 
-	        applicationDetailRepository.save(app);
- 
-	        return ResponseEntity.ok(
-	                new ApiResponse<>(HttpStatus.OK.value(), "Loan type updated successfully", null));
- 
+	        String prefix = loanType.getLoanType().replaceAll("[^a-zA-Z]", "").toUpperCase();
+	        prefix = prefix.length() >= 3 ? prefix.substring(0, 3) : String.format("%-3s", prefix).replace(' ', 'X');
+
+	        String uid = UUID.randomUUID().toString().replaceAll("-", "").substring(0, 6).toUpperCase();
+	        //String applicationNumber = prefix + "-" + uid;
+	        String appno = prefix+uid;
+	        saved.setApplicationNumber(appno);
+	        loanTypeWorkflowRepository.save(saved); // ? Save updated app number
+
+	        // ? Prepare response
+	        Map<String, Object> responseData = new LinkedHashMap<>();
+	        responseData.put("loanTypeId", saved.getId());
+	        responseData.put("loanType", saved.getLoanType());
+	        responseData.put("applicationNumber", saved.getApplicationNumber());
+	        responseData.put("userId", saved.getUserId());
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+	                "Loan type added successfully with application number", responseData));
+
 	    } catch (Exception e) {
 	        e.printStackTrace();
 	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-	                new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
-	                        "Error updating loan type: " + e.getMessage(), null));
+	            new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                    "Failed to add loan type: " + e.getMessage(), null));
 	    }
 	}
-
 }
