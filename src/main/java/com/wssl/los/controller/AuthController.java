@@ -786,26 +786,31 @@ public class AuthController {
 	}
 
 	@PutMapping("/loan-type/update-approval-setup/{loanType}")
-	public ResponseEntity<ApiResponse<String>> updateApprovalSetup(@PathVariable String loanType,
-	                                                               @RequestBody List<ApprovalStep> approvalSteps) {
+	public ResponseEntity<ApiResponse<String>> updateApprovalSetup(
+	        @PathVariable String loanType,
+	        @RequestBody List<ApprovalStep> approvalSteps) {
+
 	    Optional<LoanType> existing = loanTypeRepository.findByLoanType(loanType);
+
 	    if (existing.isPresent()) {
 	        LoanType update = existing.get();
-	        String approvalSetupJson = null;
-			try {
-				approvalSetupJson = new ObjectMapper().writeValueAsString(approvalSteps);
-			} catch (JsonProcessingException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-	        update.setApprovalSetup(approvalSetupJson);
-	        loanTypeRepository.save(update);
-	        return ResponseEntity.ok(new ApiResponse<>(200, "Approval setup updated successfully", null));
+	        try {
+	            String approvalSetupJson = new ObjectMapper().writeValueAsString(approvalSteps);
+	            update.setApprovalSetup(approvalSetupJson);
+	            loanTypeRepository.save(update);
+	            return ResponseEntity.ok(new ApiResponse<>(200, "Approval setup updated successfully", null));
+	        } catch (JsonProcessingException e) {
+	            e.printStackTrace();
+	            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                    .body(new ApiResponse<>(500, "Failed to convert approval setup to JSON", null));
+	        }
 	    } else {
-	        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-	                new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Loan type not found", null));
+	        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+	                .body(new ApiResponse<>(404, "Loan type not found", null));
 	    }
 	}
+
+
 
 
 
