@@ -2277,7 +2277,7 @@ public class AuthController {
 	        }
 
 	        // ✅ Check if loanType already exists for this user
-	        Optional<LoanTypeWorkflow> existingLoanType = loanTypeWorkflowRepository.findByUserIdAndLoanTypeAndDelFlg(userId, loanTypeName, "N");
+	        Optional<LoanTypeWorkflow> existingLoanType = loanTypeWorkflowRepository.findByUserIdAndLoanTypeAndDelFlag(userId, loanTypeName, "N");
 	        if (existingLoanType.isPresent()) {
 	            LoanTypeWorkflow existing = existingLoanType.get();
 	            Map<String, Object> existingData = new LinkedHashMap<>();
