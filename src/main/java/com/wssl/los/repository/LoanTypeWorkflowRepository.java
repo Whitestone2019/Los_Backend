@@ -12,9 +12,11 @@ public interface LoanTypeWorkflowRepository extends JpaRepository<LoanTypeWorkfl
 
     List<LoanTypeWorkflow> findByUserId(String userId);
 
-	LoanTypeWorkflow findByApplicationNumberAndDelFlag(String applicationNumber, String string);
+	LoanTypeWorkflow findByApplicationNumberAndDelFlag(String applicationNumber, String delFlag);
 
-	List<LoanTypeWorkflow> findByUserIdAndDelFlag(String userId, String string);
+	List<LoanTypeWorkflow> findByUserIdAndDelFlag(String userId, String delFlag);
+	
+	List<LoanTypeWorkflow> findByDelFlag(String delFlag);
 
 	
 }
