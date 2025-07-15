@@ -2262,18 +2262,12 @@ public class AuthController {
 	@PostMapping("/add_loan_type")
 	public ResponseEntity<ApiResponse<Map<String, Object>>> addLoanType(@RequestBody LoanTypeWorkflow loanTypeRequest) {
 	    try {
-	        // ? Check if loanType already exists
-//	        Optional<LoanTypeWorkflow> existing = loanTypeWorkflowRepository.findByLoanType(loanTypeRequest.getLoanType());
-//	        if (existing.isPresent()) {
-//	            return ResponseEntity.status(HttpStatus.CONFLICT).body(
-//	                new ApiResponse<>(HttpStatus.CONFLICT.value(), "Loan type already exists", null));
-//	        }
-
-	        // ? Validate userId
 	        String userId = loanTypeRequest.getUserId();
-	        if (userId == null || userId.isBlank()) {
+	        String loanTypeName = loanTypeRequest.getLoanType();
+
+	        if (userId == null || userId.isBlank() || loanTypeName == null || loanTypeName.isBlank()) {
 	            return ResponseEntity.badRequest().body(
-	                new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Missing or invalid userId", null));
+	                new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Missing or invalid userId or loanType", null));
 	        }
 
 	        Optional<User> userOpt = userRepository.findByUserIdAndDelflg(userId, "N");
@@ -2282,24 +2276,35 @@ public class AuthController {
 	                new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "User not found for userId: " + userId, null));
 	        }
 
-	        // ? Save initial loan type (without app number)
-	        LoanTypeWorkflow loanType = new LoanTypeWorkflow();
-	        loanType.setLoanType(loanTypeRequest.getLoanType());
-	        loanType.setUserId(userId);
+	        // ✅ Check if loanType already exists for this user
+	        Optional<LoanTypeWorkflow> existingLoanType = loanTypeWorkflowRepository.findByUserIdAndLoanTypeAndDelFlg(userId, loanTypeName, "N");
+	        if (existingLoanType.isPresent()) {
+	            LoanTypeWorkflow existing = existingLoanType.get();
+	            Map<String, Object> existingData = new LinkedHashMap<>();
+	            existingData.put("loanTypeId", existing.getId());
+	            existingData.put("loanType", existing.getLoanType());
+	            existingData.put("applicationNumber", existing.getApplicationNumber());
+	            existingData.put("userId", existing.getUserId());
 
+	            return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+	                    "Loan type already exists. Returning existing application number.", existingData));
+	        }
+
+	        // ✅ Save new Loan Type
+	        LoanTypeWorkflow loanType = new LoanTypeWorkflow();
+	        loanType.setLoanType(loanTypeName);
+	        loanType.setUserId(userId);
 	        LoanTypeWorkflow saved = loanTypeWorkflowRepository.save(loanType);
 
-	        
-	        String prefix = loanType.getLoanType().replaceAll("[^a-zA-Z]", "").toUpperCase();
+	        // Generate application number
+	        String prefix = loanTypeName.replaceAll("[^a-zA-Z]", "").toUpperCase();
 	        prefix = prefix.length() >= 3 ? prefix.substring(0, 3) : String.format("%-3s", prefix).replace(' ', 'X');
-
 	        String uid = UUID.randomUUID().toString().replaceAll("-", "").substring(0, 6).toUpperCase();
-	        //String applicationNumber = prefix + "-" + uid;
-	        String appno = prefix+uid;
-	        saved.setApplicationNumber(appno);
-	        loanTypeWorkflowRepository.save(saved); // ? Save updated app number
+	        String appno = prefix + uid;
 
-	        // ? Prepare response
+	        saved.setApplicationNumber(appno);
+	        loanTypeWorkflowRepository.save(saved);
+
 	        Map<String, Object> responseData = new LinkedHashMap<>();
 	        responseData.put("loanTypeId", saved.getId());
 	        responseData.put("loanType", saved.getLoanType());
@@ -2316,4 +2321,5 @@ public class AuthController {
 	                    "Failed to add loan type: " + e.getMessage(), null));
 	    }
 	}
+
 }
