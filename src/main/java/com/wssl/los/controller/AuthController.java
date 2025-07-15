@@ -1091,7 +1091,6 @@ public class AuthController {
 			// Step 4: Set values
 			account.setUser(user);
 			account.setApplicationDetail(application);
-			account.setApplicationDetail(application);
 			account.setAccountHolderName(incoming.getAccountHolderName());
 			account.setBankName(incoming.getBankName());
 			account.setAccountNumber(incoming.getAccountNumber());
@@ -2294,6 +2293,7 @@ public class AuthController {
 	        LoanTypeWorkflow loanType = new LoanTypeWorkflow();
 	        loanType.setLoanType(loanTypeName);
 	        loanType.setUserId(userId);
+	        loanType.setDelFlag("N");
 	        LoanTypeWorkflow saved = loanTypeWorkflowRepository.save(loanType);
 
 	        // Generate application number
