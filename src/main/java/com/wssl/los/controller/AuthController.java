@@ -2321,5 +2321,165 @@ public class AuthController {
 	                    "Failed to add loan type: " + e.getMessage(), null));
 	    }
 	}
+	
+	@GetMapping("/get_applicationDetails/{userId}")
+	public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getApplicationDetailsByUserId(@PathVariable String userId) {
+	    try {
+	        // Fetch LoanTypeWorkflow by userId
+	        List<LoanTypeWorkflow> workflows = loanTypeWorkflowRepository.findByUserIdAndDelFlag(userId, "N");
+
+	        // Fetch ApplicationDetail once per user
+	        ApplicationDetail appDetail = applicationDetailRepository.findByUserIdAndDelFlag(userId, "N");
+
+	        List<Map<String, Object>> responseList = workflows.stream().map(workflow -> {
+	            Map<String, Object> responseMap = new LinkedHashMap<>();
+	            String applicationNumber = workflow.getApplicationNumber();
+
+	            // LoanTypeWorkflow
+	            Map<String, Object> workflowData = new LinkedHashMap<>();
+	            workflowData.put("loanType", workflow.getLoanType());
+	            workflowData.put("applicationNumber", applicationNumber);
+	            workflowData.put("userId", userId);
+	            responseMap.put("loanTypeWorkflow", workflowData);
+
+	            // ApplicationDetail - common for user
+	            if (appDetail != null) {
+	                Map<String, Object> applicationData = new LinkedHashMap<>();
+	                applicationData.put("applicationId", appDetail.getId());
+	                applicationData.put("userId", appDetail.getUserId());
+	                applicationData.put("dateOfBirth", appDetail.getDateOfBirth());
+	                applicationData.put("monthlyGrossIncome", appDetail.getMonthlyGrossIncome());
+	                applicationData.put("ssn", appDetail.getSsn());
+	                applicationData.put("confirmSsn", appDetail.getConfirmSsn());
+	                applicationData.put("howMuchDoYouNeed", appDetail.getHowMuchDoYouNeed());
+	                applicationData.put("homeAddress", appDetail.getHomeAddress());
+	                applicationData.put("zipCode", appDetail.getZipCode());
+	                applicationData.put("city", appDetail.getCity());
+	                applicationData.put("state", appDetail.getState());
+	                applicationData.put("isHomeOwner", appDetail.getIsHomeOwner());
+	                applicationData.put("createdBy", appDetail.getCreatedBy());
+	                applicationData.put("createdDate", appDetail.getCreatedDate());
+	                applicationData.put("updatedBy", appDetail.getUpdatedBy());
+	                applicationData.put("updatedDate", appDetail.getUpdatedDate());
+	                responseMap.put("applicationDetails", applicationData);
+	            }
+
+	            // User Details
+	            User user = workflow.getUser();
+	            if (user != null) {
+	                Map<String, Object> userData = new LinkedHashMap<>();
+	                userData.put("userId", user.getUserId());
+	                userData.put("firstName", user.getFirstName());
+	                userData.put("lastName", user.getLastName());
+	                userData.put("email", user.getEmail());
+	                userData.put("phone", user.getPhone());
+	                responseMap.put("userDetails", userData);
+	            }
+
+	            // Linked Bank Accounts
+	            List<LinkBankAccount> bankAccounts = linkedbankaccountRepository
+	                    .findByApplicationDetail_ApplicationNumberAndDelFlag(applicationNumber, "N");
+	            if (!bankAccounts.isEmpty()) {
+	                List<Map<String, Object>> bankList = new ArrayList<>();
+	                for (LinkBankAccount bank : bankAccounts) {
+	                    Map<String, Object> bankData = new LinkedHashMap<>();
+	                    bankData.put("accountId", bank.getId());
+	                    bankData.put("accountHolderName", bank.getAccountHolderName());
+	                    bankData.put("bankName", bank.getBankName());
+	                    bankData.put("accountNumber", bank.getAccountNumber());
+	                    bankData.put("ifscCode", bank.getIfscCode());
+	                    bankData.put("accountType", bank.getAccountType());
+	                    bankData.put("isAuthorized", bank.getIsAuthorized());
+	                    bankData.put("createdDate", bank.getCreatedDate());
+	                    bankList.add(bankData);
+	                }
+	                responseMap.put("linkedBankAccounts", bankList);
+	            }
+
+	            // Document Verifications
+	            List<DocumentVerification> documents = documentVerificationRepository
+	                    .findByApplicationNumberAndUser_UserIdAndDelFlag(applicationNumber, userId, "N");
+	            if (!documents.isEmpty()) {
+	                List<Map<String, Object>> docList = new ArrayList<>();
+	                for (DocumentVerification doc : documents) {
+	                    Map<String, Object> docData = new LinkedHashMap<>();
+	                    docData.put("documentId", doc.getId());
+	                    docData.put("documentType", doc.getDocumentType());
+	                    docData.put("documentNumber", doc.getDocumentNumber());
+	                    docData.put("issueDate", doc.getIssueDate());
+	                    docData.put("expiryDate", doc.getExpiryDate());
+	                    docData.put("issuingAuthority", doc.getIssuingAuthority());
+	                    docData.put("filePath", doc.getFilePath());
+	                    docData.put("consentGiven", doc.getConsentGiven());
+	                    docData.put("createdAt", doc.getCreatedAt());
+	                    docList.add(docData);
+	                }
+	                responseMap.put("documentVerifications", docList);
+	            }
+
+	            // Accept Offer
+	            acceptOfferRepository
+	                    .findByApplicationDetail_ApplicationNumberAndUser_UserIdAndDelFlag(applicationNumber, userId, "N")
+	                    .ifPresent(offer -> {
+	                        Map<String, Object> offerData = new LinkedHashMap<>();
+	                        offerData.put("offerId", offer.getId());
+	                        offerData.put("loanAmount", offer.getLoanAmount());
+	                        offerData.put("tenureMonths", offer.getTenureMonths());
+	                        offerData.put("interestRate", offer.getInterestRate());
+	                        offerData.put("estimatedEmi", offer.getEstimatedEmi());
+	                        offerData.put("consentGiven", offer.getConsentGiven());
+	                        offerData.put("createdAt", offer.getCreatedAt());
+	                        responseMap.put("acceptOfferDetails", offerData);
+	                    });
+
+	            // Review & Agreement
+	            reviewAndAgreementRepository
+	                    .findByApplicationNumberAndUserIdAndDelFlag(applicationNumber, userId, "N")
+	                    .ifPresent(agreement -> {
+	                        Map<String, Object> agreementData = new LinkedHashMap<>();
+	                        agreementData.put("reviewAgreementId", agreement.getId());
+	                        agreementData.put("infoConfirmed", agreement.getInfoConfirmed());
+	                        agreementData.put("termsAgreed", agreement.getTermsAgreed());
+	                        agreementData.put("identityAuthorized", agreement.getIdentityAuthorized());
+	                        agreementData.put("fullName", agreement.getFullName());
+	                        agreementData.put("signatureType", agreement.getSignatureType());
+	                        agreementData.put("signatureMethod", agreement.getSignatureMethod());
+	                        agreementData.put("signaturePath", agreement.getSignaturePath());
+	                        agreementData.put("createdAt", agreement.getCreatedAt());
+	                        agreementData.put("delFlag", agreement.getDelFlag());
+	                        responseMap.put("reviewAndAgreementDetails", agreementData);
+	                    });
+
+	            // Funded Info
+	            fundedInfoRepository
+	                    .findByApplicationNumberAndUserIdAndDelFlag(applicationNumber, userId, "N")
+	                    .ifPresent(funded -> {
+	                        Map<String, Object> fundedData = new LinkedHashMap<>();
+	                        fundedData.put("fundedId", funded.getId());
+	                        fundedData.put("fundingAmount", funded.getFundingAmount());
+	                        fundedData.put("fundingDate", funded.getFundingDate());
+	                        fundedData.put("confirmFunding", funded.getConfirmFunding());
+	                        fundedData.put("createdBy", funded.getCreatedBy());
+	                        fundedData.put("createdDate", funded.getCreatedDate());
+	                        fundedData.put("updatedBy", funded.getUpdatedBy());
+	                        fundedData.put("updatedDate", funded.getUpdatedDate());
+	                        fundedData.put("delFlag", funded.getDelFlag());
+	                        responseMap.put("fundedInfo", fundedData);
+	                    });
+
+	            return responseMap;
+	        }).toList();
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+	                "Application details retrieved successfully for userId: " + userId, responseList));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "Failed to fetch application details for userId: " + userId + ". Error: " + e.getMessage(), null));
+	    }
+	}
+
 
 }
