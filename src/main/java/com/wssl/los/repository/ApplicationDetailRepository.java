@@ -12,6 +12,9 @@ public interface ApplicationDetailRepository extends JpaRepository<ApplicationDe
 //	ApplicationDetail findByApplicationNumberAndDelFlag(String applicationNumber, String delFlag);
 	long countByDelFlag(String string);
 	ApplicationDetail findByUserIdAndDelFlag(String userId, String delFlag);
+	
+	//Optional<ApplicationDetail> findByUserIdAndDelFlag(String userId, String delFlag);
+
 
 
 }

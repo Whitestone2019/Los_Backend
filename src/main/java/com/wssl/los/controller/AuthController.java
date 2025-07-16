@@ -921,91 +921,93 @@ public class AuthController {
 
 	@PostMapping("/add_appdetails")
 	public ResponseEntity<ApiResponse<Map<String, Object>>> applicationdetails(
-			@RequestBody ApplicationDetail applicationdetails) {
+	        @RequestBody ApplicationDetail applicationdetails) {
 
-		try {
-			String inputUserId = applicationdetails.getUserId();
-			if (inputUserId == null || inputUserId.isBlank()) {
-				return ResponseEntity.badRequest()
-						.body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Missing userId in request"));
-			}
-
-			// ✅ Check if userId exists in User table
-			Optional<User> user = userRepository.findByUserIdAndDelflg(inputUserId, "N");
-			if (user.isEmpty()) {
-				return ResponseEntity.badRequest()
-						.body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Invalid userId: " + inputUserId));
-			}
-
-			// ✅ Print userId to console
-			System.out.println("User ID from DB: " + user.get().getUserId());
-
-			// ✅ Set other fields
-			applicationdetails.setDelFlag("N");
-			applicationdetails.setCreatedDate(LocalDateTime.now());
-
-			// ✅ Save first to generate ID
-			ApplicationDetail savedDetails = applicationDetailRepository.save(applicationdetails);
-
-			// ✅ Save updated application number
-			applicationDetailRepository.save(savedDetails);
-
-			// ✅ Prepare response
-			Map<String, Object> responseData = new HashMap<>();
-			responseData.put("id", savedDetails.getId());
-			responseData.put("userId", savedDetails.getUserId());
-
-			return ResponseEntity.ok(
-					new ApiResponse<>(HttpStatus.OK.value(), "Application details saved successfully", responseData));
-
-		} catch (Exception e) {
-			e.printStackTrace();
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<>(
-					HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to save application details: " + e.getMessage()));
-		}
-	}
-
-	@GetMapping("/get_applicationdetailsonly_by_user/{userId}")
-	public ResponseEntity<ApiResponse<Map<String, Object>>> getApplicationOnlyByUser(@PathVariable String userId) {
 	    try {
-	        // Fetch ApplicationDetail by userId and delFlag = 'N'
-	        ApplicationDetail app = applicationDetailRepository.findByUserIdAndDelFlag(userId, "N");
-
-	        if (app == null) {
-	            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-	                .body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application details not found for user", null));
+	        String inputUserId = applicationdetails.getUserId();
+	        if (inputUserId == null || inputUserId.isBlank()) {
+	            return ResponseEntity.badRequest()
+	                    .body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Missing userId in request"));
 	        }
 
-	        Map<String, Object> applicationData = new LinkedHashMap<>();
-	        applicationData.put("applicationId", app.getId());
-	        applicationData.put("dateOfBirth", app.getDateOfBirth());
-	        applicationData.put("monthlyGrossIncome", app.getMonthlyGrossIncome());
-	        applicationData.put("ssn", app.getSsn());
-	        applicationData.put("confirmSsn", app.getConfirmSsn());
-	        applicationData.put("howMuchDoYouNeed", app.getHowMuchDoYouNeed());
-	        applicationData.put("homeAddress", app.getHomeAddress());
-	        applicationData.put("homeAddress2", app.getHomeAddress2());
-	        applicationData.put("zipCode", app.getZipCode());
-	        applicationData.put("city", app.getCity());
-	        applicationData.put("state", app.getState());
-	        applicationData.put("isHomeOwner", app.getIsHomeOwner());
-	        applicationData.put("createdBy", app.getCreatedBy());
-	        applicationData.put("createdDate", app.getCreatedDate());
-	        applicationData.put("updatedBy", app.getUpdatedBy());
-	        applicationData.put("updatedDate", app.getUpdatedDate());
+	        // ✅ Check if userId exists in User table
+	        Optional<User> user = userRepository.findByUserIdAndDelflg(inputUserId, "N");
+	        if (user.isEmpty()) {
+	            return ResponseEntity.badRequest()
+	                    .body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Invalid userId: " + inputUserId));
+	        }
 
-	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
-	            "Application details retrieved successfully", applicationData));
+	        // ✅ Check if ApplicationDetail already exists for this user
+	        ApplicationDetail existingAppDetail = applicationDetailRepository.findByUserIdAndDelFlag(inputUserId, "N");
+	        if (existingAppDetail != null) {
+	            return ResponseEntity.badRequest()
+	                    .body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), 
+	                        "Application details already exist for this userId: " + inputUserId));
+	        }
+
+	        // ✅ Set other fields
+	        applicationdetails.setDelFlag("N");
+	        applicationdetails.setCreatedDate(LocalDateTime.now());
+
+	        // ✅ Save application details
+	        ApplicationDetail savedDetails = applicationDetailRepository.save(applicationdetails);
+
+	        // ✅ Prepare response
+	        Map<String, Object> responseData = new HashMap<>();
+	        responseData.put("id", savedDetails.getId());
+	        responseData.put("userId", savedDetails.getUserId());
+
+	        return ResponseEntity.ok(
+	                new ApiResponse<>(HttpStatus.OK.value(), "Application details saved successfully", responseData));
 
 	    } catch (Exception e) {
 	        e.printStackTrace();
 	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-	            .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
-	                "Error retrieving application details: " + e.getMessage(), null));
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "Failed to save application details: " + e.getMessage()));
 	    }
 	}
-	
 
+		@GetMapping("/get_applicationdetailsonly_by_user/{userId}")
+		public ResponseEntity<ApiResponse<Map<String, Object>>> getApplicationOnlyByUser(@PathVariable String userId) {
+		    try {
+		        // Fetch ApplicationDetail by userId and delFlag = 'N'
+		        ApplicationDetail app = applicationDetailRepository.findByUserIdAndDelFlag(userId, "N");
+	
+		        if (app == null) {
+		            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+		                .body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application details not found for user", null));
+		        }
+	
+		        Map<String, Object> applicationData = new LinkedHashMap<>();
+		        applicationData.put("applicationId", app.getId());
+		        applicationData.put("dateOfBirth", app.getDateOfBirth());
+		        applicationData.put("monthlyGrossIncome", app.getMonthlyGrossIncome());
+		        applicationData.put("ssn", app.getSsn());
+		        applicationData.put("confirmSsn", app.getConfirmSsn());
+		        applicationData.put("howMuchDoYouNeed", app.getHowMuchDoYouNeed());
+		        applicationData.put("homeAddress", app.getHomeAddress());
+		        applicationData.put("homeAddress2", app.getHomeAddress2());
+		        applicationData.put("zipCode", app.getZipCode());
+		        applicationData.put("city", app.getCity());
+		        applicationData.put("state", app.getState());
+		        applicationData.put("isHomeOwner", app.getIsHomeOwner());
+		        applicationData.put("createdBy", app.getCreatedBy());
+		        applicationData.put("createdDate", app.getCreatedDate());
+		        applicationData.put("updatedBy", app.getUpdatedBy());
+		        applicationData.put("updatedDate", app.getUpdatedDate());
+	
+		        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+		            "Application details retrieved successfully", applicationData));
+	
+		    } catch (Exception e) {
+		        e.printStackTrace();
+		        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+		            .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+		                "Error retrieving application details: " + e.getMessage(), null));
+		    }
+		}
+	
 	@DeleteMapping("/delete_application_by_user/{userId}")
 	public ResponseEntity<ApiResponse<String>> deleteApplicationByUserId(@PathVariable String userId) {
 	    try {
@@ -1033,10 +1035,59 @@ public class AuthController {
 	                "Failed to delete application: " + e.getMessage()));
 	    }
 	}
+	@PutMapping("/update_applicationdetails/{userId}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> updateApplicationDetails(
+	        @PathVariable String userId,
+	        @RequestBody ApplicationDetail updatedDetails) {
+	    
+	    try {
+	        // Check if ApplicationDetail exists for userId
+	        ApplicationDetail existingApp = applicationDetailRepository.findByUserIdAndDelFlag(userId, "N");
+
+	        if (existingApp == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+	                .body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application details not found for userId: " + userId, null));
+	        }
+
+	        // Update fields
+	        existingApp.setDateOfBirth(updatedDetails.getDateOfBirth());
+	        existingApp.setMonthlyGrossIncome(updatedDetails.getMonthlyGrossIncome());
+	        existingApp.setSsn(updatedDetails.getSsn());
+	        existingApp.setConfirmSsn(updatedDetails.getConfirmSsn());
+	        existingApp.setHowMuchDoYouNeed(updatedDetails.getHowMuchDoYouNeed());
+	        existingApp.setHomeAddress(updatedDetails.getHomeAddress());
+	        existingApp.setHomeAddress2(updatedDetails.getHomeAddress2());
+	        existingApp.setZipCode(updatedDetails.getZipCode());
+	        existingApp.setCity(updatedDetails.getCity());
+	        existingApp.setState(updatedDetails.getState());
+	        existingApp.setIsHomeOwner(updatedDetails.getIsHomeOwner());
+	        existingApp.setUpdatedBy(updatedDetails.getUpdatedBy());
+	        existingApp.setUpdatedDate(LocalDateTime.now());
+
+	        // Save updated details
+	        ApplicationDetail savedApp = applicationDetailRepository.save(existingApp);
+
+	        // Prepare response
+	        Map<String, Object> responseData = new LinkedHashMap<>();
+	        responseData.put("applicationId", savedApp.getId());
+	        responseData.put("userId", savedApp.getUserId());
+	        responseData.put("updatedDate", savedApp.getUpdatedDate());
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+	                "Application details updated successfully", responseData));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	            .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                "Error updating application details: " + e.getMessage(), null));
+	    }
+	}
+
 	@GetMapping("/getapplicationCount")
 	public ResponseEntity<ApiResponse<Long>> getApplicationCount() {
 		try {
-			long appCount = applicationDetailRepository.countByDelFlag("N");
+			long appCount = loanTypeWorkflowRepository.countByDelFlag("N");
 			return ResponseEntity
 					.ok(new ApiResponse<>(HttpStatus.OK.value(), "Application count retrieved successfully", appCount));
 		} catch (Exception e) {

@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import com.wssl.los.model.LoanType;
 
 public interface LoanTypeWorkflowRepository extends JpaRepository<LoanTypeWorkflow, Long> {
+	
+	long countByDelFlag(String delFlag);
     Optional<LoanTypeWorkflow> findByLoanType(String loanType);
 
     List<LoanTypeWorkflow> findByUserId(String userId);
