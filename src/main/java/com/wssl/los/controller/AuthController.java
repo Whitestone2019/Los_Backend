@@ -64,6 +64,8 @@ import com.wssl.los.repository.OtpRepository;
 import com.wssl.los.repository.ReviewAndAgreementRepository;
 import com.wssl.los.repository.RoleMenuPermissionRepository;
 import com.wssl.los.repository.RoleRepository;
+import com.wssl.los.repository.UserColumnPreference;
+import com.wssl.los.repository.UserColumnPreferenceRepository;
 import com.wssl.los.repository.UserRepository;
 import com.wssl.los.service.RefreshTokenService;
 import com.wssl.los.util.JwtUtil;
@@ -2531,6 +2533,33 @@ public class AuthController {
 	                        "Failed to fetch application details for userId: " + userId + ". Error: " + e.getMessage(), null));
 	    }
 	}
+	
+	@Autowired
+	private UserColumnPreferenceRepository userColumnPreferenceRepository;
+	@PostMapping("/saveColumnPreferences")
+	public ResponseEntity<ApiResponse<String>> saveColumnPreferences(@RequestBody List<UserColumnPreference> preferences) {
+	    try {
+	        userColumnPreferenceRepository.saveAll(preferences);
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Preferences saved successfully", null));
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to save preferences. Error: " + e.getMessage(), null));
+	    }
+	}
 
+	@GetMapping("/getColumnPreferences")
+	public ResponseEntity<ApiResponse<List<UserColumnPreference>>> getColumnPreferences() {
+	    try {
+	        List<UserColumnPreference> preferences = userColumnPreferenceRepository.findAll();
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Preferences fetched successfully", preferences));
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to fetch preferences. Error: " + e.getMessage(), null));
+	    }
+	}
+
+	
 
 }
