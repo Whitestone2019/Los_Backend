@@ -2539,14 +2539,27 @@ public class AuthController {
 	@PostMapping("/saveColumnPreferences")
 	public ResponseEntity<ApiResponse<String>> saveColumnPreferences(@RequestBody List<UserColumnPreference> preferences) {
 	    try {
-	        userColumnPreferenceRepository.saveAll(preferences);
-	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Preferences saved successfully", null));
+	        for (UserColumnPreference preference : preferences) {
+	            Optional<UserColumnPreference> existingPref = userColumnPreferenceRepository.findByColumnName(preference.getColumnName());
+
+	            if (existingPref.isPresent()) {
+	                UserColumnPreference existing = existingPref.get();
+	                existing.setVisible(preference.isVisible());
+	                // set other fields to be updated if any
+	                userColumnPreferenceRepository.save(existing);
+	            } else {
+	                userColumnPreferenceRepository.save(preference);
+	            }
+	        }
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Preferences saved/updated successfully", null));
+
 	    } catch (Exception e) {
 	        e.printStackTrace();
 	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to save preferences. Error: " + e.getMessage(), null));
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to save/update preferences. Error: " + e.getMessage(), null));
 	    }
 	}
+
 
 	@GetMapping("/getColumnPreferences")
 	public ResponseEntity<ApiResponse<List<UserColumnPreference>>> getColumnPreferences() {
