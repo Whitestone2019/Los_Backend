@@ -73,6 +73,7 @@ import com.wssl.los.util.JwtUtil;
 import at.favre.lib.crypto.bcrypt.BCrypt;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
+import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 
 @RestController
@@ -787,6 +788,7 @@ public class AuthController {
 	    }
 	}
 
+	 @Transactional
 	@PutMapping("/loan-type/update-approval-setup/{loanType}")
 	public ResponseEntity<ApiResponse<String>> updateApprovalSetup(
 	        @PathVariable String loanType,
