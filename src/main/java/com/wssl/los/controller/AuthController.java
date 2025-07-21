@@ -1,5 +1,9 @@
 package com.wssl.los.controller;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,8 +17,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -1261,127 +1268,119 @@ public class AuthController {
 							"Error deleting bank account details: " + e.getMessage(), null));
 		}
 	}
+	
+	  @Value("${file.upload-dir}")
+	    private String uploadDir;
 
-	@PostMapping("/addOrUpdate_Application_documentDeatils")
-	public ResponseEntity<ApiResponse<Map<String, Object>>> addOrUpdateDocument(
-			@RequestBody DocumentVerification incoming) {
+	
+		@PostMapping(value = "/addOrUpdate_Application_documentDeatils", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+		public ResponseEntity<ApiResponse<Map<String, Object>>> addOrUpdateDocument(
+		    @RequestPart("documentData") DocumentVerification incoming,
+		    @RequestPart(value = "file", required = false) MultipartFile file) {
 
-		Map<String, Object> response = new HashMap<>();
+	    Map<String, Object> response = new HashMap<>();
 
-		try {
-			// Step 1: Validate input
-			if (incoming.getApplicationNumber() == null || incoming.getUser() == null) {
-				return ResponseEntity.badRequest().body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(),
-						"Application number and user info must not be null.", null));
-			}
+	    try {
+	        if (incoming.getApplicationNumber() == null || incoming.getUser() == null) {
+	            return ResponseEntity.badRequest().body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(),
+	                    "Application number and user info must not be null.", null));
+	        }
 
-			String applicationNumber = incoming.getApplicationNumber();
-			String userId = incoming.getUser().getUserId();
+	        String applicationNumber = incoming.getApplicationNumber();
+	        String userId = incoming.getUser().getUserId();
 
-			// Step 2: Fetch application and user (read-only)
-			LoanTypeWorkflow application = loanTypeWorkflowRepository
-					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+	        LoanTypeWorkflow application = loanTypeWorkflowRepository.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+	        if (application == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+	                    "Invalid or deleted application number.", null));
+	        }
 
-			if (application == null) {
-				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
-						"Invalid or deleted application number.", null));
-			}
+	        User user = application.getUser();
+	        if (user == null || !user.getUserId().equals(userId)) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+	                    "User not found or does not match application.", null));
+	        }
 
-			User user = application.getUser();
+	        Optional<DocumentVerification> existingOpt = documentVerificationRepository
+	                .findByApplicationNumberAndUser_UserIdAndDocumentNumberAndDelFlag(applicationNumber, userId,
+	                        incoming.getDocumentNumber(), "N");
 
-			if (user == null || !user.getUserId().equals(userId)) {
-				return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
-						"User not found or does not match application.", null));
-			}
+	        boolean isUpdate = existingOpt.isPresent();
+	        DocumentVerification document = existingOpt.orElse(new DocumentVerification());
 
-			// Step 3: Check for existing document
-			Optional<DocumentVerification> existingOpt = documentVerificationRepository
-					.findByApplicationNumberAndUser_UserIdAndDocumentNumberAndDelFlag(applicationNumber, userId,
-							incoming.getDocumentNumber(), "N");
+	        document.setApplicationNumber(applicationNumber);
+	        document.setUser(user);
+	        document.setDocumentType(incoming.getDocumentType());
+	        document.setDocumentNumber(incoming.getDocumentNumber());
+	        document.setIssueDate(incoming.getIssueDate());
+	        document.setExpiryDate(incoming.getExpiryDate());
+	        document.setIssuingAuthority(incoming.getIssuingAuthority());
+	        document.setConsentGiven(incoming.getConsentGiven());
+	        document.setDelFlag("N");
+	        document.setCreatedAt(LocalDateTime.now());
 
-			boolean isUpdate = existingOpt.isPresent();
-			DocumentVerification document = existingOpt.orElse(new DocumentVerification());
+	        // Save file if provided
+	        if (file != null && !file.isEmpty()) {
+	            String storagePath = uploadDir;
+	            String filename = UUID.randomUUID().toString() + "_" + file.getOriginalFilename();
+	            Path path = Paths.get(storagePath + filename);
+	            Files.copy(file.getInputStream(), path, StandardCopyOption.REPLACE_EXISTING);
 
-			// Step 4: Set values
-			document.setApplicationNumber(applicationNumber);
-			document.setUser(user);
-			document.setDocumentType(incoming.getDocumentType());
-			document.setDocumentNumber(incoming.getDocumentNumber());
-			document.setIssueDate(incoming.getIssueDate());
-			document.setExpiryDate(incoming.getExpiryDate());
-			document.setIssuingAuthority(incoming.getIssuingAuthority());
-			document.setFilePath(incoming.getFilePath());
-			document.setConsentGiven(incoming.getConsentGiven());
-			document.setDelFlag("N");
-			document.setCreatedAt(LocalDateTime.now());
+	            document.setFilePath(filename);
+	        }
 
-			// Step 5: Save to DB
-			DocumentVerification saved = documentVerificationRepository.save(document);
+	        DocumentVerification saved = documentVerificationRepository.save(document);
 
-			// Step 6: Prepare response
-			response.put("documentId", saved.getId());
-			response.put("applicationNumber", applicationNumber);
-			response.put("documentType", saved.getDocumentType());
-			response.put("userId", userId);
-			response.put("delFlag", saved.getDelFlag());
+	        response.put("documentId", saved.getId());
+	        response.put("applicationNumber", applicationNumber);
+	        response.put("documentType", saved.getDocumentType());
+	        response.put("userId", userId);
+	        response.put("delFlag", saved.getDelFlag());
+	        response.put("filePath", saved.getFilePath());
 
-			String message = isUpdate ? "Document verification updated successfully."
-					: "Document verification added successfully.";
-			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), message, response));
+	        String message = isUpdate ? "Document verification updated successfully." : "Document verification added successfully.";
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), message, response));
 
-		} catch (Exception e) {
-			e.printStackTrace();
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
-							"An unexpected error occurred while saving document verification: " + e.getMessage(),
-							null));
-		}
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "An unexpected error occurred while saving document verification: " + e.getMessage(), null));
+	    }
 	}
 
-	@GetMapping("/get_only_one_document_detail/{applicationNumber}")
-	public ResponseEntity<ApiResponse<Map<String, Object>>> getOnlyOneDocumentDetail(
-			@PathVariable String applicationNumber) {
-		try {
-			// Step 1: Check application and user
-			LoanTypeWorkflow application = loanTypeWorkflowRepository
-					.findByApplicationNumberAndDelFlag(applicationNumber, "N");
-			if (application == null || application.getUser() == null) {
-				return ResponseEntity.status(HttpStatus.NOT_FOUND)
-						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application or user not found", null));
-			}
 
-			User user = application.getUser();
+	@GetMapping("/get_document_file/{documentId}")
+	public ResponseEntity<byte[]> getDocumentFile(@PathVariable Long documentId) {
+	    try {
+	        Optional<DocumentVerification> docOpt = documentVerificationRepository.findById(documentId);
 
-			// Step 2: Fetch one document
-			List<DocumentVerification> documents = documentVerificationRepository
-					.findByApplicationNumberAndUser_UserIdAndDelFlag(applicationNumber, user.getUserId(), "N");
+	        if (docOpt.isEmpty() || docOpt.get().getDelFlag().equalsIgnoreCase("Y")) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+	        }
 
-			if (documents.isEmpty()) {
-				return ResponseEntity.status(HttpStatus.NOT_FOUND)
-						.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "No document details found", null));
-			}
+	        DocumentVerification document = docOpt.get();
+	        String storagePath = uploadDir;
+	        Path filePath = Paths.get(storagePath + document.getFilePath());
 
-			DocumentVerification doc = documents.get(0); // pick the first one
-			Map<String, Object> docData = new LinkedHashMap<>();
-			docData.put("documentId", doc.getId());
-			docData.put("documentType", doc.getDocumentType());
-			docData.put("documentNumber", doc.getDocumentNumber());
-			docData.put("issueDate", doc.getIssueDate());
-			docData.put("expiryDate", doc.getExpiryDate());
-			docData.put("issuingAuthority", doc.getIssuingAuthority());
-			docData.put("filePath", doc.getFilePath());
-			docData.put("consentGiven", doc.getConsentGiven());
-			docData.put("createdAt", doc.getCreatedAt());
+	        if (!Files.exists(filePath)) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+	        }
 
-			return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
-					"Single document verification detail retrieved successfully", docData));
-		} catch (Exception e) {
-			e.printStackTrace();
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-					.body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
-							"Error retrieving document details: " + e.getMessage(), null));
-		}
+	        byte[] fileContent = Files.readAllBytes(filePath);
+	        String contentType = Files.probeContentType(filePath);
+
+	        HttpHeaders headers = new HttpHeaders();
+	        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + document.getFilePath());
+	        headers.add(HttpHeaders.CONTENT_TYPE, contentType != null ? contentType : "application/octet-stream");
+
+	        return new ResponseEntity<>(fileContent, headers, HttpStatus.OK);
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+	    }
 	}
+
 
 	@DeleteMapping("/delete_application_documentdetails/{applicationNumber}")
 	public ResponseEntity<ApiResponse<String>> Deletedocmentdails(@PathVariable String applicationNumber) {
