@@ -6,6 +6,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,7 +20,6 @@ import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -1373,36 +1373,44 @@ public class AuthController {
 
 
 
-	@GetMapping("/get_document_file/{documentId}")
-	public ResponseEntity<byte[]> getDocumentFile(@PathVariable Long documentId) {
-	    try {
-	        Optional<DocumentVerification> docOpt = documentVerificationRepository.findById(documentId);
+	  @GetMapping("/get_document_file/{documentId}")
+	  public ResponseEntity<ApiResponse<Map<String, Object>>> getDocumentFile(@PathVariable Long documentId) {
+	      Map<String, Object> response = new HashMap<>();
+	      try {
+	          Optional<DocumentVerification> docOpt = documentVerificationRepository.findById(documentId);
 
-	        if (docOpt.isEmpty() || docOpt.get().getDelFlag().equalsIgnoreCase("Y")) {
-	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
-	        }
+	          if (docOpt.isEmpty() || "Y".equalsIgnoreCase(docOpt.get().getDelFlag())) {
+	              return ResponseEntity.status(HttpStatus.NOT_FOUND)
+	                      .body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Document not found", null));
+	          }
 
-	        DocumentVerification document = docOpt.get();
-	        String storagePath = uploadDir;
-	        Path filePath = Paths.get(storagePath + document.getFilePath());
+	          DocumentVerification document = docOpt.get();
+	          String storagePath = uploadDir.endsWith("/") ? uploadDir : uploadDir + "/";
+	          Path filePath = Paths.get(storagePath, document.getFilePath());
 
-	        if (!Files.exists(filePath)) {
-	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
-	        }
+	          if (!Files.exists(filePath)) {
+	              return ResponseEntity.status(HttpStatus.NOT_FOUND)
+	                      .body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "File not found on server", null));
+	          }
 
-	        byte[] fileContent = Files.readAllBytes(filePath);
-	        String contentType = Files.probeContentType(filePath);
+	          byte[] fileContent = Files.readAllBytes(filePath);
+	          String contentType = Files.probeContentType(filePath);
+	          String base64File = Base64.getEncoder().encodeToString(fileContent);
 
-	        HttpHeaders headers = new HttpHeaders();
-	        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + document.getFilePath());
-	        headers.add(HttpHeaders.CONTENT_TYPE, contentType != null ? contentType : "application/octet-stream");
+	          response.put("documentId", document.getId());
+	          response.put("fileName", document.getFilePath());
+	          response.put("contentType", contentType != null ? contentType : "application/octet-stream");
+	          response.put("base64File", base64File);
 
-	        return new ResponseEntity<>(fileContent, headers, HttpStatus.OK);
-	    } catch (Exception e) {
-	        e.printStackTrace();
-	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
-	    }
-	}
+	          return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "File retrieved successfully", response));
+
+	      } catch (Exception e) {
+	          e.printStackTrace();
+	          return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                  .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Error retrieving file", null));
+	      }
+	  }
+
 
 
 	@DeleteMapping("/delete_application_documentdetails/{applicationNumber}")
