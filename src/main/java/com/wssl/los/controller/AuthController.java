@@ -1283,13 +1283,9 @@ public class AuthController {
 	      System.out.println("Incoming documentData JSON: " + documentData);
 
 	      Map<String, Object> response = new HashMap<>();
-	     // DocumentVerification incoming;
 
 	      try {
-	          // Parse JSON string to DocumentVerification object
-//	          ObjectMapper mapper = new ObjectMapper();
-//	          incoming = mapper.readValue(documentData, DocumentVerification.class);
-	    	  DocumentVerification incoming = objectMapper.readValue(documentData, DocumentVerification.class);
+	          DocumentVerification incoming = objectMapper.readValue(documentData, DocumentVerification.class);
 
 	          if (incoming.getApplicationNumber() == null || incoming.getUser() == null) {
 	              return ResponseEntity.badRequest().body(new ApiResponse<>(HttpStatus.BAD_REQUEST.value(),
@@ -1332,10 +1328,19 @@ public class AuthController {
 
 	          // Save file if provided
 	          if (file != null && !file.isEmpty()) {
-	              String storagePath = uploadDir;
+	              String storagePath = uploadDir.endsWith("/") ? uploadDir : uploadDir + "/";
 	              String filename = UUID.randomUUID().toString() + "_" + file.getOriginalFilename();
 	              Path path = Paths.get(storagePath + filename);
+
+	              // Ensure parent directory exists
+	              Path parentDir = path.getParent();
+	              if (parentDir != null && !Files.exists(parentDir)) {
+	                  Files.createDirectories(parentDir);
+	                  System.out.println("Created directories: " + parentDir.toAbsolutePath());
+	              }
+
 	              Files.copy(file.getInputStream(), path, StandardCopyOption.REPLACE_EXISTING);
+	              System.out.println("Saved file to: " + path.toAbsolutePath());
 
 	              document.setFilePath(filename);
 	          }
