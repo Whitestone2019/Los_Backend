@@ -1329,7 +1329,12 @@ public class AuthController {
 	          // Save file if provided
 	          if (file != null && !file.isEmpty()) {
 	              String storagePath = uploadDir.endsWith("/") ? uploadDir : uploadDir + "/";
-	              String filename = UUID.randomUUID().toString() + "_" + file.getOriginalFilename();
+	              String originalFilename = file.getOriginalFilename();
+	              if (originalFilename != null) {
+	                  // Replace spaces with underscores
+	                  originalFilename = originalFilename.replaceAll("\\s+", "_");
+	              }
+	              String filename = UUID.randomUUID().toString() + "_" + originalFilename;
 	              Path path = Paths.get(storagePath + filename);
 
 	              // Ensure parent directory exists
@@ -1365,6 +1370,7 @@ public class AuthController {
 	                          "An unexpected error occurred while saving document verification: " + e.getMessage(), null));
 	      }
 	  }
+
 
 
 	@GetMapping("/get_document_file/{documentId}")
