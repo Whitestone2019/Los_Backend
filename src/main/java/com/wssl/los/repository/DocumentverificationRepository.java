@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
  
 import com.wssl.los.model.DocumentVerification;
+import com.wssl.los.model.User;
 @Repository
 public interface DocumentverificationRepository extends JpaRepository<DocumentVerification, Long> {
 
@@ -16,5 +17,6 @@ public interface DocumentverificationRepository extends JpaRepository<DocumentVe
  
 	List<DocumentVerification> findByApplicationNumberAndUser_UserIdAndDelFlag(String applicationnumber, String userId,
 			String string);
+
 
 }

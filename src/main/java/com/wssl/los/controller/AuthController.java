@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -44,6 +45,10 @@ import com.wssl.los.model.AcceptOffer;
 import com.wssl.los.model.ApiResponse;
 import com.wssl.los.model.ApplicationDetail;
 import com.wssl.los.model.ApprovalProcessFlow;
+import com.wssl.los.model.CorporateApplicationDetail;
+import com.wssl.los.model.CorporateBusinessDetail;
+import com.wssl.los.model.CorporateCollateralDetail;
+import com.wssl.los.model.CorporateOwnerDetail;
 import com.wssl.los.model.DocumentVerification;
 import com.wssl.los.model.FundedInfo;
 import com.wssl.los.model.LinkBankAccount;
@@ -59,6 +64,10 @@ import com.wssl.los.repository.AcceptOfferRepository;
 import com.wssl.los.repository.ApplicationDetailRepository;
 import com.wssl.los.repository.ApprovalProcessFlowRepository;
 import com.wssl.los.repository.ApprovalStep;
+import com.wssl.los.repository.CorporateBusinessDetailRepositoy;
+import com.wssl.los.repository.CorporateOwner;
+import com.wssl.los.repository.CorporateUserdetails;
+import com.wssl.los.repository.CorporatecollateralRepo;
 import com.wssl.los.repository.DocumentverificationRepository;
 import com.wssl.los.repository.FundedRepository;
 import com.wssl.los.repository.LinkBankAccountRepository;
@@ -129,6 +138,15 @@ public class AuthController {
 	private ReviewAndAgreementRepository reviewAndAgreementRepository;
 	@Autowired
 	private FundedRepository fundedInfoRepository;
+	
+	@Autowired
+	private CorporateUserdetails  corporateRepo;
+	@Autowired
+	private CorporateBusinessDetailRepositoy  corporateBusinessdetailRepositoy;
+	@Autowired
+	private CorporateOwner ownerdeatilsrepo;
+	@Autowired
+	private CorporatecollateralRepo collateralRepo;
 
 	private AtomicLong userSequence = new AtomicLong(1);
 	private Map<String, String> otpStore = new HashMap<>();
@@ -1373,18 +1391,29 @@ public class AuthController {
 
 
 
-	  @GetMapping("/get_document_file/{documentId}")
-	  public ResponseEntity<ApiResponse<Map<String, Object>>> getDocumentFile(@PathVariable Long documentId) {
+	  @GetMapping("/get_document_file/{applicationNumber}")
+	  public ResponseEntity<ApiResponse<Map<String, Object>>> getDocumentFile(@PathVariable String applicationNumber) {
 	      Map<String, Object> response = new HashMap<>();
 	      try {
-	          Optional<DocumentVerification> docOpt = documentVerificationRepository.findById(documentId);
+	    		LoanTypeWorkflow application = loanTypeWorkflowRepository
+						.findByApplicationNumberAndDelFlag(applicationNumber, "N");
+				if (application == null || application.getUser() == null) {
+					return ResponseEntity.status(HttpStatus.NOT_FOUND)
+							.body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Application or user not found", null));
+				}
+				User user = application.getUser();
+				if (user == null) {
+					return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+							new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found for this application", null));
+				}
+	          List<DocumentVerification> docOpt = documentVerificationRepository.findByApplicationNumberAndUser_UserIdAndDelFlag(applicationNumber,user.getUserId(),"N");
 
-	          if (docOpt.isEmpty() || "Y".equalsIgnoreCase(docOpt.get().getDelFlag())) {
+	          if (docOpt.isEmpty() || "Y".equalsIgnoreCase(docOpt.get(0).getDelFlag())) {
 	              return ResponseEntity.status(HttpStatus.NOT_FOUND)
 	                      .body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Document not found", null));
 	          }
 
-	          DocumentVerification document = docOpt.get();
+	          DocumentVerification document = docOpt.get(0);
 	          String storagePath = uploadDir.endsWith("/") ? uploadDir : uploadDir + "/";
 	          Path filePath = Paths.get(storagePath, document.getFilePath());
 
@@ -1396,8 +1425,12 @@ public class AuthController {
 	          byte[] fileContent = Files.readAllBytes(filePath);
 	          String contentType = Files.probeContentType(filePath);
 	          String base64File = Base64.getEncoder().encodeToString(fileContent);
-
 	          response.put("documentId", document.getId());
+	          response.put("documentNumber", document.getDocumentNumber());
+	          response.put("issueDate", document.getIssueDate());
+	          response.put("expiryDate", document.getExpiryDate());
+	          response.put("issuingAuthority", document.getIssuingAuthority());
+	          response.put("consentGiven", document.getConsentGiven());
 	          response.put("fileName", document.getFilePath());
 	          response.put("contentType", contentType != null ? contentType : "application/octet-stream");
 	          response.put("base64File", base64File);
@@ -2604,7 +2637,1201 @@ public class AuthController {
 	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Failed to fetch preferences. Error: " + e.getMessage(), null));
 	    }
 	}
+// Corporate Details
+	@PostMapping("/add_corporate_appdetails")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> addCorporateApplicationDetails(
+	        @RequestBody CorporateApplicationDetail applicationDetail) {
+
+	    try {
+	        String inputUserId = applicationDetail.getUserId();
+
+	        // Validate userId
+	        if (inputUserId == null || inputUserId.isBlank()) {
+	            return ResponseEntity.badRequest().body(
+	                    new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Missing userId in request"));
+	        }
+
+	        //  Check if user exists
+	        Optional<User> user = userRepository.findByUserIdAndDelflg(inputUserId, "N");
+	        if (user.isEmpty()) {
+	            return ResponseEntity.badRequest().body(
+	                    new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Invalid userId: " + inputUserId));
+	        }
+
+	        //  Set required values
+	        applicationDetail.setCorporateApplicationNumber("TEMP"); // To satisfy NOT NULL
+	        applicationDetail.setDelFlag("N");
+	        applicationDetail.setCreatedDate(LocalDateTime.now());
+
+	        //  First save to generate ID
+	        CorporateApplicationDetail savedDetail = corporateRepo.save(applicationDetail);
+
+	        //  Generate application number like "CORPUSR004-12"
+	        String corporateAppNumber = "CORP" + inputUserId + "-" + savedDetail.getId();
+	        savedDetail.setCorporateApplicationNumber(corporateAppNumber);
+
+	        // Save again with application number
+	        corporateRepo.save(savedDetail);
+
+	        // Prepare response
+	        Map<String, Object> responseData = new HashMap<>();
+	        responseData.put("id", savedDetail.getId());
+	        responseData.put("userId", savedDetail.getUserId());
+	        responseData.put("corporateApplicationNumber", corporateAppNumber);
+
+	        return ResponseEntity.ok(new ApiResponse<>(
+	                HttpStatus.OK.value(), "Corporate application details saved successfully", responseData));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "Failed to save corporate application details: " + e.getMessage()));
+	    }
+	}
+	
+	@PutMapping("/update_corporate_appdetails/{corporateApplicationNumber}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> updateCorporateApplicationDetails(
+	        @PathVariable String corporateApplicationNumber,
+	        @RequestBody CorporateApplicationDetail updatedData) {
+
+	    try {
+	        //  Fetch existing record by corporateApplicationNumber and delFlag
+	        CorporateApplicationDetail existing = corporateRepo
+	                .findByCorporateApplicationNumberAndDelFlag(corporateApplicationNumber, "N");
+
+	        if (existing == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+	                    .body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+	                            "No Corporate Application found with number: " + corporateApplicationNumber));
+	        }
+
+	        //  Update necessary fields from the request
+	        existing.setCorporateId(updatedData.getCorporateId());
+	        existing.setCompanyLegalName(updatedData.getCompanyLegalName());
+	        existing.setAmountRequested(updatedData.getAmountRequested());
+	        existing.setContactFirstName(updatedData.getContactFirstName());
+	        existing.setContactLastName(updatedData.getContactLastName());
+	        existing.setContactEmailId(updatedData.getContactEmailId());
+	        existing.setContactPhone(updatedData.getContactPhone());
+	        existing.setUpdatedBy(updatedData.getUpdatedBy());
+	        existing.setUpdatedDate(LocalDateTime.now());
+
+	        // Save updated record
+	        CorporateApplicationDetail saved = corporateRepo.save(existing);
+
+	        //  Prepare response
+	        Map<String, Object> response = new HashMap<>();
+	        response.put("id", saved.getId());
+	        response.put("corporateApplicationNumber", saved.getCorporateApplicationNumber());
+	        response.put("userId", saved.getUserId());
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+	                "Corporate application updated successfully", response));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "Failed to update corporate application: " + e.getMessage()));
+	    }
+	}
+	@GetMapping("/get_corporate_appdetails/{corporateApplicationNumber}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getCorporateApplicationDetails(
+	        @PathVariable String corporateApplicationNumber) {
+	    try {
+	        // 🔍 Fetch record by corporate application number and active flag
+	        CorporateApplicationDetail detail = corporateRepo
+	                .findByCorporateApplicationNumberAndDelFlag(corporateApplicationNumber, "N");
+
+	        if (detail == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Corporate application not found", null));
+	        }
+
+	        // ✅ Prepare response map with selected fields only
+	        Map<String, Object> data = new LinkedHashMap<>();
+	        data.put("id", detail.getId());
+	        data.put("corporateApplicationNumber", detail.getCorporateApplicationNumber());
+	        data.put("corporateId", detail.getCorporateId());
+	        data.put("companyLegalName", detail.getCompanyLegalName());
+	        data.put("amountRequested", detail.getAmountRequested());
+	        data.put("contactFirstName", detail.getContactFirstName());
+	        data.put("contactLastName", detail.getContactLastName());
+	        data.put("contactEmailId", detail.getContactEmailId());
+	        data.put("contactPhone", detail.getContactPhone());
+	        data.put("createdBy", detail.getCreatedBy());
+	        data.put("createdDate", detail.getCreatedDate());
+	        data.put("updatedBy", detail.getUpdatedBy());
+	        data.put("updatedDate", detail.getUpdatedDate());
+	        data.put("userId", detail.getUserId());
+
+	        return ResponseEntity.ok(new ApiResponse<>(
+	                HttpStatus.OK.value(), "Corporate application retrieved successfully", data));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+	                new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "Failed to fetch corporate application: " + e.getMessage(), null));
+	    }
+	}
+	@DeleteMapping("/delete_corporate_appdetails/{corporateApplicationNumber}")
+	public ResponseEntity<ApiResponse<String>> deleteCorporateApplication(
+	        @PathVariable String corporateApplicationNumber) {
+	    try {
+	        //Fetch the existing record
+	        CorporateApplicationDetail detail = corporateRepo
+	                .findByCorporateApplicationNumberAndDelFlag(corporateApplicationNumber, "N");
+
+	        if (detail == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+	                            "Corporate application not found or already deleted"));
+	        }
+
+	        // Soft delete: set delFlag = 'Y' and update date
+	        detail.setDelFlag("Y");
+	        detail.setUpdatedDate(LocalDateTime.now());
+
+	        corporateRepo.save(detail);
+
+	        return ResponseEntity.ok(
+	                new ApiResponse<>(HttpStatus.OK.value(),
+	                        "Corporate application deleted successfully (soft delete)"));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+	                new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "Failed to delete corporate application: " + e.getMessage()));
+	    }
+	}
+	
+	@PostMapping("/addOrUpdate_corporateBusinessDetail")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> addOrUpdateCorporateBusinessDetail(
+	        @RequestBody CorporateBusinessDetail incoming) {
+
+	    Map<String, Object> response = new HashMap<>();
+
+	    try {
+	       
+	        if (incoming.getCorporateApplicationNumber() == null || incoming.getCorporateApplicationNumber().isEmpty()) {
+	            return ResponseEntity.badRequest().body(
+	                new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Corporate Application Number must not be null.", null));
+	        }
+
+	        String corpAppNumber = incoming.getCorporateApplicationNumber();
+
+	        
+	        CorporateApplicationDetail corpApp =corporateRepo 
+	                .findByCorporateApplicationNumberAndDelFlag(corpAppNumber, "N");
+
+	        if (corpApp == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Corporate Application not found or deleted.", null));
+	        }
+
+	        User user = corpApp.getUser();
+	        if (user == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found for the corporate application.", null));
+	        }
+
+	        String userId = user.getUserId();
+
+	        
+	        Optional<CorporateBusinessDetail> existingOpt = corporateBusinessdetailRepositoy
+	                .findByCorporateApplicationNumberAndUser_UserIdAndDelFlag(corpAppNumber, userId, "N");
+
+	        boolean isUpdate = existingOpt.isPresent();
+	        CorporateBusinessDetail businessDetail = existingOpt.orElse(new CorporateBusinessDetail());
+
+	        
+	        businessDetail.setCorporateApplicationNumber(corpAppNumber);
+	        businessDetail.setCorporateApplicationDetail(corpApp);
+	        businessDetail.setUser(user);
+	        businessDetail.setDba(incoming.getDba());
+	        businessDetail.setSsnItin(incoming.getSsnItin());
+	        businessDetail.setBusinessAddress1(incoming.getBusinessAddress1());
+	        businessDetail.setBusinessAddress2(incoming.getBusinessAddress2());
+	        businessDetail.setZipCode(incoming.getZipCode());
+	        businessDetail.setCity(incoming.getCity());
+	        businessDetail.setState(incoming.getState());
+	        businessDetail.setRevenue(incoming.getRevenue());
+	        businessDetail.setTimeInBusiness(incoming.getTimeInBusiness());
+	        businessDetail.setBusinessStartDate(incoming.getBusinessStartDate());
+	        businessDetail.setTypeOfBusiness(incoming.getTypeOfBusiness());
+	        businessDetail.setIndustry(incoming.getIndustry());
+	        businessDetail.setTaxId(incoming.getTaxId());
+	        businessDetail.setDelFlag("N");
+
+	        if (!isUpdate) {
+	            businessDetail.setCreatedBy(incoming.getCreatedBy());
+	            businessDetail.setCreatedDate(LocalDateTime.now());
+	        }
+
+	        businessDetail.setUpdatedBy(incoming.getUpdatedBy());
+	        businessDetail.setUpdatedDate(LocalDateTime.now());
+
+	        
+	        CorporateBusinessDetail saved = corporateBusinessdetailRepositoy.save(businessDetail);
+
+	        
+	        response.put("businessId", saved.getId());
+	        response.put("corporateApplicationNumber", corpApp.getCorporateApplicationNumber());
+	        response.put("userId", user.getUserId());
+	        response.put("dba", saved.getDba());
+	        response.put("delFlag", saved.getDelFlag());
+
+	        String message = isUpdate ? "Corporate business detail updated successfully." : "Corporate business detail added successfully.";
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), message, response));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "An unexpected error occurred while saving corporate business detail: " + e.getMessage(), null));
+	    }
+	}
+	@GetMapping("/get_corporateBusinessDetail/{applicationNumber}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getCorporateBusinessDetailByApplicationNumber(
+	        @PathVariable("applicationNumber") String applicationNumber) {
+
+	    try {
+	        
+	        if (applicationNumber == null || applicationNumber.isEmpty()) {
+	            return ResponseEntity.badRequest().body(
+	                new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Corporate Application Number must not be null.", null));
+	        }
+
+	        
+	        CorporateApplicationDetail corpApp = corporateRepo
+	                .findByCorporateApplicationNumberAndDelFlag(applicationNumber, "N");
+
+	        if (corpApp == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Corporate Application not found or deleted.", null));
+	        }
+
+	        User user = corpApp.getUser();
+	        if (user == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found for the corporate application.", null));
+	        }
+
+	        String userId = user.getUserId();
+
+	        // Step 3: Fetch business detail
+	        Optional<CorporateBusinessDetail> detailOpt = corporateBusinessdetailRepositoy
+	                .findByCorporateApplicationNumberAndUser_UserIdAndDelFlag(applicationNumber, userId, "N");
+
+	        if (detailOpt.isEmpty()) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Corporate business detail not found.", null));
+	        }
+
+	        CorporateBusinessDetail detail = detailOpt.get();
+
+	        // Step 4: Prepare response
+	        Map<String, Object> response = new HashMap<>();
+	        response.put("businessId", detail.getId());
+	        response.put("corporateApplicationNumber", detail.getCorporateApplicationNumber());
+	        response.put("userId", userId);
+	        response.put("dba", detail.getDba());
+	        response.put("ssnItin", detail.getSsnItin());
+	        response.put("businessAddress1", detail.getBusinessAddress1());
+	        response.put("businessAddress2", detail.getBusinessAddress2());
+	        response.put("zipCode", detail.getZipCode());
+	        response.put("city", detail.getCity());
+	        response.put("state", detail.getState());
+	        response.put("revenue", detail.getRevenue());
+	        response.put("timeInBusiness", detail.getTimeInBusiness());
+	        response.put("businessStartDate", detail.getBusinessStartDate());
+	        response.put("typeOfBusiness", detail.getTypeOfBusiness());
+	        response.put("industry", detail.getIndustry());
+	        response.put("taxId", detail.getTaxId());
+	        response.put("createdBy", detail.getCreatedBy());
+	        response.put("createdDate", detail.getCreatedDate());
+	        response.put("updatedBy", detail.getUpdatedBy());
+	        response.put("updatedDate", detail.getUpdatedDate());
+	        response.put("delFlag", detail.getDelFlag());
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Corporate business detail fetched successfully.", response));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+	                new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "An unexpected error occurred while fetching business detail: " + e.getMessage(), null));
+	    }
+	    
+
+	}
+	
+	@DeleteMapping("/delete_corporateBusinessDetail/{applicationNumber}")
+	public ResponseEntity<ApiResponse<String>> deleteCorporateBusinessDetailByAppNumber(
+	        @PathVariable("applicationNumber") String applicationNumber) {
+
+	    try {
+	        if (applicationNumber == null || applicationNumber.trim().isEmpty()) {
+	            return ResponseEntity.badRequest().body(
+	                new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Application number must not be null.", null));
+	        }
+
+	        // Step 1: Fetch CorporateApplicationDetail
+	        CorporateApplicationDetail corpApp = corporateRepo
+	                .findByCorporateApplicationNumberAndDelFlag(applicationNumber, "N");
+
+	        if (corpApp == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Corporate Application not found.", null));
+	        }
+
+	        User user = corpApp.getUser();
+	        if (user == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found for the application.", null));
+	        }
+
+	        // Step 2: Fetch Business Detail
+	        Optional<CorporateBusinessDetail> detailOpt = corporateBusinessdetailRepositoy
+	                .findByCorporateApplicationNumberAndUser_UserIdAndDelFlag(applicationNumber, user.getUserId(), "N");
+
+	        if (detailOpt.isEmpty()) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Corporate business detail not found.", null));
+	        }
+
+	        CorporateBusinessDetail businessDetail = detailOpt.get();
+
+	        // Step 3: Set delFlag = 'Y'
+	        businessDetail.setDelFlag("Y");
+	        businessDetail.setUpdatedDate(LocalDateTime.now());
+
+	        corporateBusinessdetailRepositoy.save(businessDetail);
+
+	        return ResponseEntity.ok(
+	                new ApiResponse<>(HttpStatus.OK.value(), "Corporate business detail deleted successfully.", null));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+	                new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "Error occurred while deleting corporate business detail: " + e.getMessage(), null));
+	    }
+	}
+	@PostMapping("/addOrUpdate_ownerDetail")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> addOrUpdateOwnerDetail(
+	        @RequestBody CorporateOwnerDetail incoming) {
+
+	    Map<String, Object> response = new HashMap<>();
+
+	    try {
+	        // Step 1: Validate input
+	        if (incoming.getCorporateApplicationDetail() == null ||
+	            incoming.getCorporateApplicationDetail().getCorporateApplicationNumber() == null ||
+	            incoming.getCorporateApplicationDetail().getCorporateApplicationNumber().isEmpty()) {
+
+	            return ResponseEntity.badRequest().body(
+	                new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Corporate Application Number must not be null.", null));
+	        }
+
+	        String corpAppNumber = incoming.getCorporateApplicationDetail().getCorporateApplicationNumber();
+
+	        // Step 2: Fetch CorporateApplicationDetail
+	        CorporateApplicationDetail corpApp = corporateRepo
+	                .findByCorporateApplicationNumberAndDelFlag(corpAppNumber, "N");
+
+	        if (corpApp == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Corporate Application not found or deleted.", null));
+	        }
+
+	        User user = corpApp.getUser();
+	        if (user == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found for the corporate application.", null));
+	        }
+
+	        String userId = user.getUserId();
+
+	        // Step 3: Check if owner detail already exists
+	        Optional<CorporateOwnerDetail> existingOpt = ownerdeatilsrepo
+	                .findByCorporateApplicationDetail_CorporateApplicationNumberAndUser_UserIdAndDelFlag(corpAppNumber, userId, "N");
+
+	        boolean isUpdate = existingOpt.isPresent();
+	        CorporateOwnerDetail ownerDetail = existingOpt.orElse(new CorporateOwnerDetail());
+
+	        // Step 4: Set fields
+	        ownerDetail.setCorporateApplicationDetail(corpApp);
+	        ownerDetail.setUser(user);
+	        ownerDetail.setOwnerFirstName(incoming.getOwnerFirstName());
+	        ownerDetail.setOwnerLastName(incoming.getOwnerFirstName());
+	        ownerDetail.setDateOfBirth(incoming.getDateOfBirth());
+	        ownerDetail.setOwnershipPercentage(incoming.getOwnershipPercentage());
+	        ownerDetail.setAddressLine1(incoming.getAddressLine1());
+	        ownerDetail.setAddressLine2(incoming.getAddressLine2());
+	        ownerDetail.setZipCode(incoming.getZipCode());
+	        ownerDetail.setCity(incoming.getCity());
+	        ownerDetail.setState(incoming.getState());
+	        ownerDetail.setCreditReportAuthorized(incoming.getCreditReportAuthorized());
+	        ownerDetail.setApplicationConsentGiven(incoming.getApplicationConsentGiven());
+	        ownerDetail.setDelFlag("N");
+
+	        if (!isUpdate) {
+	            ownerDetail.setCreatedBy(incoming.getCreatedBy());
+	            ownerDetail.setCreatedDate(LocalDateTime.now());
+	        }
+
+	        ownerDetail.setUpdatedBy(incoming.getUpdatedBy());
+	        ownerDetail.setUpdatedDate(LocalDateTime.now());
+
+	        // Step 5: Save to DB
+	        CorporateOwnerDetail saved = ownerdeatilsrepo.save(ownerDetail);
+
+	        // Step 6: Prepare response
+	        response.put("ownerId", saved.getId());
+	        response.put("corporateApplicationNumber", corpAppNumber);
+	        response.put("userId", userId);
+	        response.put("firstName", saved.getOwnerFirstName());
+	        response.put("lastName", saved.getOwnerFirstName());
+	        response.put("ownershipPercentage", saved.getOwnershipPercentage());
+	        response.put("delFlag", saved.getDelFlag());
+
+	        String message = isUpdate ? "Owner detail updated successfully." : "Owner detail added successfully.";
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), message, response));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "An error occurred while saving owner detail: " + e.getMessage(), null));
+	    }
+	}
+	@GetMapping("/get_single_corporate_owner_detail/{corporateApplicationNumber}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getSingleCorporateOwnerDetail(
+	        @PathVariable String corporateApplicationNumber) {
+	    try {
+	        // Step 1: Fetch corporate application
+	        CorporateApplicationDetail corpApp = corporateRepo
+	                .findByCorporateApplicationNumberAndDelFlag(corporateApplicationNumber, "N");
+
+	        if (corpApp == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Corporate application not found", null));
+	        }
+
+	        // Step 2: Fetch single owner record
+	        Optional<CorporateOwnerDetail> optionalOwner = ownerdeatilsrepo
+	                .findFirstByCorporateApplicationDetailAndDelFlagOrderByCreatedDateAsc(corpApp, "N");
+
+	        if (optionalOwner.isEmpty()) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Owner detail not found", null));
+	        }
+
+	        CorporateOwnerDetail owner = optionalOwner.get();
+
+	        // Step 3: Prepare response
+	        Map<String, Object> data = new LinkedHashMap<>();
+	        data.put("id", owner.getId());
+	        data.put("corporateApplicationNumber", corpApp.getCorporateApplicationNumber());
+	        data.put("ownerFirstName", owner.getOwnerFirstName());
+	        data.put("ownerLastName", owner.getOwnerFirstName());
+	        data.put("dateOfBirth", owner.getDateOfBirth());
+	        data.put("ownershipPercentage", owner.getOwnershipPercentage());
+	        data.put("addressLine1", owner.getAddressLine1());
+	        data.put("addressLine2", owner.getAddressLine2());
+	        data.put("zipCode", owner.getZipCode());
+	        data.put("city", owner.getCity());
+	        data.put("state", owner.getState());
+	        data.put("creditReportAuthorized", owner.getCreditReportAuthorized());
+	        data.put("createdBy", owner.getCreatedBy());
+	        data.put("createdDate", owner.getCreatedDate());
+	        data.put("updatedBy", owner.getUpdatedBy());
+	        data.put("updatedDate", owner.getUpdatedDate());
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Owner detail retrieved successfully", data));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "Failed to fetch owner detail: " + e.getMessage(), null));
+	    }
+	}
+	@DeleteMapping("/delete_single_corporate_owner_detail/{corporateApplicationNumber}")
+	public ResponseEntity<ApiResponse<String>> deleteSingleCorporateOwnerDetail(
+	        @PathVariable String corporateApplicationNumber) {
+	    try {
+	        // Step 1: Fetch corporate application
+	        CorporateApplicationDetail corpApp = corporateRepo
+	                .findByCorporateApplicationNumberAndDelFlag(corporateApplicationNumber, "N");
+
+	        if (corpApp == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Corporate application not found", null));
+	        }
+
+	        // Step 2: Fetch the first active owner record
+	        Optional<CorporateOwnerDetail> optionalOwner = ownerdeatilsrepo
+	                .findFirstByCorporateApplicationDetailAndDelFlagOrderByCreatedDateAsc(corpApp, "N");
+
+	        if (optionalOwner.isEmpty()) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Owner detail not found", null));
+	        }
+
+	        // Step 3: Mark as deleted
+	        CorporateOwnerDetail owner = optionalOwner.get();
+	        owner.setDelFlag("Y");
+	        owner.setUpdatedDate(LocalDateTime.now()); // or LocalDate.now() if you're using only date
+	        ownerdeatilsrepo.save(owner);
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Owner detail deleted successfully", null));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "Error occurred while deleting owner detail: " + e.getMessage(), null));
+	    }
+	}
+
+	@PostMapping("/addOrUpdate_corporateCollateralDetail")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> addOrUpdateCorporateCollateralDetail(
+	        @RequestBody CorporateCollateralDetail incoming) {
+
+	    Map<String, Object> response = new HashMap<>();
+
+	    try {
+	        //  Validate input
+	        if (incoming.getCorporateApplicationDetail() == null ||
+	            incoming.getCorporateApplicationDetail().getCorporateApplicationNumber() == null ||
+	            incoming.getCorporateApplicationDetail().getCorporateApplicationNumber().isEmpty()) {
+
+	            return ResponseEntity.badRequest().body(
+	                    new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Corporate Application Number must not be null.", null));
+	        }
+
+	        String corpAppNumber = incoming.getCorporateApplicationDetail().getCorporateApplicationNumber();
+
+	        //  Fetch CorporateApplicationDetail
+	        CorporateApplicationDetail corpApp = corporateRepo
+	                .findByCorporateApplicationNumberAndDelFlag(corpAppNumber, "N");
+
+	        if (corpApp == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Corporate Application not found or deleted.", null));
+	        }
+
+	        User user = corpApp.getUser();
+	        if (user == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found for the corporate application.", null));
+	        }
+
+	        String userId = user.getUserId();
+
+	        //  Check for existing collateral detail
+	        Optional<CorporateCollateralDetail> existingOpt = collateralRepo
+	                .findByCorporateApplicationDetail_CorporateApplicationNumberAndUser_UserIdAndDelFlag(
+	                        corpAppNumber, userId, "N");
+
+	        boolean isUpdate = existingOpt.isPresent();
+	        CorporateCollateralDetail collateral = existingOpt.orElse(new CorporateCollateralDetail());
+
+	        //  Set fields
+	        collateral.setCorporateApplicationDetail(corpApp);
+	        collateral.setUser(user);
+
+	        collateral.setCollateralType(incoming.getCollateralType());
+	        collateral.setPropertyType(incoming.getPropertyType());
+	        collateral.setIsPrimaryResidential(incoming.getIsPrimaryResidential());
+	        collateral.setPropertyStreetAddress(incoming.getPropertyStreetAddress());
+	        collateral.setZipCode(incoming.getZipCode());
+	        collateral.setCity(incoming.getCity());
+	        collateral.setState(incoming.getState());
+	        collateral.setCountry(incoming.getCountry());
+	        collateral.setApprovedValue(incoming.getApprovedValue());
+	        collateral.setDebt(incoming.getDebt());
+	        collateral.setValidationDate(incoming.getValidationDate());
+	        collateral.setAssignedLtv(incoming.getAssignedLtv());
+	        collateral.setPerfectionStatus(incoming.getPerfectionStatus());
+	        collateral.setIsReleased(incoming.getIsReleased());
+	        collateral.setDelFlag("N");
+
+	        if (!isUpdate) {
+	            collateral.setCreatedBy(incoming.getCreatedBy());
+	            collateral.setCreatedDate(LocalDate.now());
+	        }
+
+	        collateral.setUpdatedBy(incoming.getUpdatedBy());
+	        collateral.setUpdatedDate(LocalDate.now());
+
+	        
+	        CorporateCollateralDetail saved = collateralRepo.save(collateral);
 
 	
+	        response.put("collateralId", saved.getId());
+	        response.put("corporateApplicationNumber", corpAppNumber);
+	        response.put("userId", userId);
+	        response.put("collateralType", saved.getCollateralType());
+	        response.put("propertyType", saved.getPropertyType());
+	        response.put("city", saved.getCity());
+	        response.put("state", saved.getState());
+	        response.put("zipCode", saved.getZipCode());
+	        response.put("delFlag", saved.getDelFlag());
+
+	        String message = isUpdate ? "Corporate collateral detail updated successfully." :
+	                                    "Corporate collateral detail added successfully.";
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), message, response));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "An error occurred while saving corporate collateral detail: " + e.getMessage(), null));
+	    }
+	}
+
+	@GetMapping("/get_corporateCollateralDetail/{corporateApplicationNumber}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getCorporateCollateralDetailByCorporateApplicationNumber(
+	        @PathVariable String corporateApplicationNumber) {
+
+	    Map<String, Object> response = new HashMap<>();
+
+	    try {
+	        // Validate input
+	        if (corporateApplicationNumber == null || corporateApplicationNumber.isEmpty()) {
+	            return ResponseEntity.badRequest().body(
+	                    new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Corporate Application Number must not be null.", null));
+	        }
+
+	        //  Find the corporate application
+	        CorporateApplicationDetail corpApp = corporateRepo
+	                .findByCorporateApplicationNumberAndDelFlag(corporateApplicationNumber, "N");
+
+	        if (corpApp == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Corporate Application not found or deleted.", null));
+	        }
+
+	        User user = corpApp.getUser();
+	        if (user == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found for the corporate application.", null));
+	        }
+
+	        String userId = user.getUserId();
+
+	        // Step 3: Find existing collateral detail
+	        Optional<CorporateCollateralDetail> existingOpt = collateralRepo
+	                .findByCorporateApplicationDetail_CorporateApplicationNumberAndUser_UserIdAndDelFlag(
+	                        corporateApplicationNumber, userId, "N");
+
+	        if (existingOpt.isEmpty()) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "No collateral detail found for this application.", null));
+	        }
+
+	        CorporateCollateralDetail collateral = existingOpt.get();
+
+	        // Step 4: Build response
+	        response.put("collateralId", collateral.getId());
+	        response.put("corporateApplicationNumber", corporateApplicationNumber);
+	        response.put("userId", userId);
+	        response.put("collateralType", collateral.getCollateralType());
+	        response.put("propertyType", collateral.getPropertyType());
+	        response.put("isPrimaryResidential", collateral.getIsPrimaryResidential());
+	        response.put("propertyStreetAddress", collateral.getPropertyStreetAddress());
+	        response.put("zipCode", collateral.getZipCode());
+	        response.put("city", collateral.getCity());
+	        response.put("state", collateral.getState());
+	        response.put("country", collateral.getCountry());
+	        response.put("approvedValue", collateral.getApprovedValue());
+	        response.put("debt", collateral.getDebt());
+	        response.put("validationDate", collateral.getValidationDate());
+	        response.put("assignedLtv", collateral.getAssignedLtv());
+	        response.put("perfectionStatus", collateral.getPerfectionStatus());
+	        response.put("isReleased", collateral.getIsReleased());
+	        response.put("delFlag", collateral.getDelFlag());
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(), "Collateral detail fetched successfully.", response));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+	                new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "An error occurred while fetching collateral detail: " + e.getMessage(), null));
+	    }
+	}
+	@DeleteMapping("/delete_corporateCollateralDetail/{corporateApplicationNumber}")
+	public ResponseEntity<ApiResponse<String>> deleteCorporateCollateralDetail(
+	        @PathVariable String corporateApplicationNumber) {
+
+	    try {
+	        // Step 1: Fetch the corporate application detail
+	        CorporateApplicationDetail corpApp = corporateRepo
+	                .findByCorporateApplicationNumberAndDelFlag(corporateApplicationNumber, "N");
+
+	        if (corpApp == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Corporate application not found.", null));
+	        }
+
+	        // Step 2: Get the associated user
+	        User user = corpApp.getUser();
+	        if (user == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "User not found for the application.", null));
+	        }
+
+	        // Step 3: Check for existing collateral record
+	        Optional<CorporateCollateralDetail> existingOpt = collateralRepo
+	                .findByCorporateApplicationDetail_CorporateApplicationNumberAndUser_UserIdAndDelFlag(
+	                        corporateApplicationNumber, user.getUserId(), "N");
+
+	        if (existingOpt.isEmpty()) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "No active collateral detail found.", null));
+	        }
+
+	        // Step 4: Perform soft delete by setting delFlag = "Y"
+	        CorporateCollateralDetail collateral = existingOpt.get();
+	        collateral.setDelFlag("Y");
+	        collateral.setUpdatedBy("system"); // or from context
+	        collateral.setUpdatedDate(LocalDate.now());
+
+	        collateralRepo.save(collateral);
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+	                "Collateral detail deleted successfully (soft delete).", null));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+	                new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "An error occurred while deleting collateral detail: " + e.getMessage(), null));
+	    }
+	}
+	
+	@GetMapping("/get_CorporateApplicationDetails/{corporateApplicationNumber}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getCorporateApplicationDetailsall(
+	        @PathVariable String corporateApplicationNumber) {
+
+	    try {
+	        CorporateApplicationDetail corpApp = corporateRepo
+	                .findByCorporateApplicationNumberAndDelFlag(corporateApplicationNumber, "N");
+
+	        if (corpApp == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(),
+	                            "Corporate Application not found or deleted.", null));
+	        }
+
+	        Map<String, Object> response = new LinkedHashMap<>();
+
+	        // Corporate Application Block
+	        Map<String, Object> appData = new LinkedHashMap<>();
+	        appData.put("corporateApplicationId", corpApp.getId());
+	        appData.put("corporateApplicationNumber", corpApp.getCorporateApplicationNumber());
+	        appData.put("corporateId", corpApp.getCorporateId());
+	        appData.put("companyLegalName", corpApp.getCompanyLegalName());
+	        appData.put("amountRequested", corpApp.getAmountRequested());
+	        appData.put("contactFirstName", corpApp.getContactFirstName());
+	        appData.put("contactLastName", corpApp.getContactLastName());
+	        appData.put("contactEmailId", corpApp.getContactEmailId());
+	        appData.put("contactPhone", corpApp.getContactPhone());
+	        appData.put("createdBy", corpApp.getCreatedBy());
+	        appData.put("createdDate", corpApp.getCreatedDate());
+	        appData.put("updatedBy", corpApp.getUpdatedBy());
+	        appData.put("updatedDate", corpApp.getUpdatedDate());
+	        appData.put("delFlag", corpApp.getDelFlag());
+	        response.put("corporateApplicationDetail", appData);
+
+	        // User Block
+	        User user = corpApp.getUser();
+	        if (user != null) {
+	            Map<String, Object> userData = new LinkedHashMap<>();
+	            userData.put("userId", user.getUserId());
+	            userData.put("firstName", user.getFirstName());
+	            userData.put("lastName", user.getLastName());
+	            userData.put("email", user.getEmail());
+	            userData.put("phone", user.getPhone());
+
+	            if (user.getRole() != null) {
+	                userData.put("roleId", user.getRole().getId());
+	                userData.put("roleName", user.getRole().getRoleName());
+	            }
+
+	            response.put("userDetails", userData);
+
+	            String userId = user.getUserId();
+
+	            //Corporate Business Detail
+	            corporateBusinessdetailRepositoy
+	                    .findByCorporateApplicationNumberAndUser_UserIdAndDelFlag(corporateApplicationNumber, userId, "N")
+	                    .ifPresent(business -> {
+	                        Map<String, Object> businessData = new LinkedHashMap<>();
+	                        businessData.put("businessId", business.getId());
+	                        businessData.put("dba", business.getDba());
+	                        businessData.put("ssnItin", business.getSsnItin());
+	                        businessData.put("businessAddress1", business.getBusinessAddress1());
+	                        businessData.put("businessAddress2", business.getBusinessAddress2());
+	                        businessData.put("zipCode", business.getZipCode());
+	                        businessData.put("city", business.getCity());
+	                        businessData.put("state", business.getState());
+	                        businessData.put("revenue", business.getRevenue());
+	                        businessData.put("timeInBusiness", business.getTimeInBusiness());
+	                        businessData.put("businessStartDate", business.getBusinessStartDate());
+	                        businessData.put("typeOfBusiness", business.getTypeOfBusiness());
+	                        businessData.put("industry", business.getIndustry());
+	                        businessData.put("taxId", business.getTaxId());
+	                        businessData.put("createdBy", business.getCreatedBy());
+	                        businessData.put("createdDate", business.getCreatedDate());
+	                        businessData.put("updatedBy", business.getUpdatedBy());
+	                        businessData.put("updatedDate", business.getUpdatedDate());
+	                        businessData.put("delFlag", business.getDelFlag());
+	                        response.put("corporateBusinessDetail", businessData);
+	                    });
+
+	            //Corporate Collateral Detail
+	            collateralRepo
+	                    .findByCorporateApplicationDetail_CorporateApplicationNumberAndUser_UserIdAndDelFlag(
+	                            corporateApplicationNumber, userId, "N")
+	                    .ifPresent(collateral -> {
+	                        Map<String, Object> collateralData = new LinkedHashMap<>();
+	                        collateralData.put("collateralId", collateral.getId());
+	                        collateralData.put("collateralType", collateral.getCollateralType());
+	                        collateralData.put("propertyType", collateral.getPropertyType());
+	                        collateralData.put("isPrimaryResidential", collateral.getIsPrimaryResidential());
+	                        collateralData.put("propertyStreetAddress", collateral.getPropertyStreetAddress());
+	                        collateralData.put("zipCode", collateral.getZipCode());
+	                        collateralData.put("city", collateral.getCity());
+	                        collateralData.put("state", collateral.getState());
+	                        collateralData.put("country", collateral.getCountry());
+	                        collateralData.put("approvedValue", collateral.getApprovedValue());
+	                        collateralData.put("debt", collateral.getDebt());
+	                        collateralData.put("validationDate", collateral.getValidationDate());
+	                        collateralData.put("assignedLtv", collateral.getAssignedLtv());
+	                        collateralData.put("perfectionStatus", collateral.getPerfectionStatus());
+	                        collateralData.put("isReleased", collateral.getIsReleased());
+	                        collateralData.put("createdBy", collateral.getCreatedBy());
+	                        collateralData.put("createdDate", collateral.getCreatedDate());
+	                        collateralData.put("updatedBy", collateral.getUpdatedBy());
+	                        collateralData.put("updatedDate", collateral.getUpdatedDate());
+	                        collateralData.put("delFlag", collateral.getDelFlag());
+	                        response.put("corporateCollateralDetail", collateralData);
+	                    });
+	        }
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+	                "Corporate application full details fetched successfully", response));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "An unexpected error occurred: " + e.getMessage(), null));
+	    }
+	}
+     
+	@GetMapping("/getCorporateApplicationDetails/{corporateApplicationNumber}")
+	public ResponseEntity<ApiResponse<Map<String, Object>>> getCorporateApplicationDetailsWithOwnerFirst(
+	        @PathVariable String corporateApplicationNumber) {
+
+	    try {
+	        CorporateApplicationDetail corpApp = corporateRepo
+	                .findByCorporateApplicationNumberAndDelFlag(corporateApplicationNumber, "N");
+
+	        if (corpApp == null) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+	                    new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "Corporate application not found or deleted", null));
+	        }
+
+	        Map<String, Object> response = new LinkedHashMap<>();
+
+	        //Corporate Application
+	        Map<String, Object> appData = new LinkedHashMap<>();
+	        appData.put("corporateApplicationId", corpApp.getId());
+	        appData.put("corporateApplicationNumber", corpApp.getCorporateApplicationNumber());
+	        appData.put("corporateId", corpApp.getCorporateId());
+	        appData.put("companyLegalName", corpApp.getCompanyLegalName());
+	        appData.put("amountRequested", corpApp.getAmountRequested());
+	        appData.put("contactFirstName", corpApp.getContactFirstName());
+	        appData.put("contactLastName", corpApp.getContactLastName());
+	        appData.put("contactEmailId", corpApp.getContactEmailId());
+	        appData.put("contactPhone", corpApp.getContactPhone());
+	        appData.put("createdBy", corpApp.getCreatedBy());
+	        appData.put("createdDate", corpApp.getCreatedDate());
+	        appData.put("updatedBy", corpApp.getUpdatedBy());
+	        appData.put("updatedDate", corpApp.getUpdatedDate());
+	        appData.put("delFlag", corpApp.getDelFlag());
+	        response.put("corporateApplicationDetail", appData);
+
+	        // User
+	        User user = corpApp.getUser();
+	        if (user != null) {
+	            Map<String, Object> userData = new LinkedHashMap<>();
+	            userData.put("userId", user.getUserId());
+	            userData.put("firstName", user.getFirstName());
+	            userData.put("lastName", user.getLastName());
+	            userData.put("email", user.getEmail());
+	            userData.put("phone", user.getPhone());
+
+	            if (user.getRole() != null) {
+	                userData.put("roleId", user.getRole().getId());
+	                userData.put("roleName", user.getRole().getRoleName());
+	            }
+
+	            response.put("userDetails", userData);
+
+	            String userId = user.getUserId();
+
+	            // Business Detail
+	            corporateBusinessdetailRepositoy
+	                    .findByCorporateApplicationNumberAndUser_UserIdAndDelFlag(corporateApplicationNumber, userId, "N")
+	                    .ifPresent(business -> {
+	                        Map<String, Object> businessData = new LinkedHashMap<>();
+	                        businessData.put("businessId", business.getId());
+	                        businessData.put("dba", business.getDba());
+	                        businessData.put("ssnItin", business.getSsnItin());
+	                        businessData.put("businessAddress1", business.getBusinessAddress1());
+	                        businessData.put("businessAddress2", business.getBusinessAddress2());
+	                        businessData.put("zipCode", business.getZipCode());
+	                        businessData.put("city", business.getCity());
+	                        businessData.put("state", business.getState());
+	                        businessData.put("revenue", business.getRevenue());
+	                        businessData.put("timeInBusiness", business.getTimeInBusiness());
+	                        businessData.put("businessStartDate", business.getBusinessStartDate());
+	                        businessData.put("typeOfBusiness", business.getTypeOfBusiness());
+	                        businessData.put("industry", business.getIndustry());
+	                        businessData.put("taxId", business.getTaxId());
+	                        businessData.put("createdBy", business.getCreatedBy());
+	                        businessData.put("createdDate", business.getCreatedDate());
+	                        businessData.put("updatedBy", business.getUpdatedBy());
+	                        businessData.put("updatedDate", business.getUpdatedDate());
+	                        businessData.put("delFlag", business.getDelFlag());
+	                        response.put("corporateBusinessDetail", businessData);
+	                    });
+
+	            
+	            ownerdeatilsrepo
+	                    .findFirstByCorporateApplicationDetailAndDelFlagOrderByCreatedDateAsc(corpApp, "N")
+	                    .ifPresent(owner -> {
+	                        Map<String, Object> ownerData = new LinkedHashMap<>();
+	                        ownerData.put("id", owner.getId());
+	                        ownerData.put("ownerFirstName", owner.getOwnerFirstName());
+	                        ownerData.put("ownerLastName", owner.getOwnerFirstName());
+	                        ownerData.put("dateOfBirth", owner.getDateOfBirth());
+	                        ownerData.put("ownershipPercentage", owner.getOwnershipPercentage());
+	                        ownerData.put("addressLine1", owner.getAddressLine1());
+	                        ownerData.put("addressLine2", owner.getAddressLine2());
+	                        ownerData.put("zipCode", owner.getZipCode());
+	                        ownerData.put("city", owner.getCity());
+	                        ownerData.put("state", owner.getState());
+	                        ownerData.put("creditReportAuthorized", owner.getCreditReportAuthorized());
+	                        ownerData.put("createdBy", owner.getCreatedBy());
+	                        ownerData.put("createdDate", owner.getCreatedDate());
+	                        ownerData.put("updatedBy", owner.getUpdatedBy());
+	                        ownerData.put("updatedDate", owner.getUpdatedDate());
+	                        response.put("ownerDetail", ownerData);
+	                    });
+
+	       
+	            collateralRepo
+	                    .findByCorporateApplicationDetail_CorporateApplicationNumberAndUser_UserIdAndDelFlag(
+	                            corporateApplicationNumber, userId, "N")
+	                    .ifPresent(collateral -> {
+	                        Map<String, Object> collateralData = new LinkedHashMap<>();
+	                        collateralData.put("collateralId", collateral.getId());
+	                        collateralData.put("collateralType", collateral.getCollateralType());
+	                        collateralData.put("propertyType", collateral.getPropertyType());
+	                        collateralData.put("isPrimaryResidential", collateral.getIsPrimaryResidential());
+	                        collateralData.put("propertyStreetAddress", collateral.getPropertyStreetAddress());
+	                        collateralData.put("zipCode", collateral.getZipCode());
+	                        collateralData.put("city", collateral.getCity());
+	                        collateralData.put("state", collateral.getState());
+	                        collateralData.put("country", collateral.getCountry());
+	                        collateralData.put("approvedValue", collateral.getApprovedValue());
+	                        collateralData.put("debt", collateral.getDebt());
+	                        collateralData.put("validationDate", collateral.getValidationDate());
+	                        collateralData.put("assignedLtv", collateral.getAssignedLtv());
+	                        collateralData.put("perfectionStatus", collateral.getPerfectionStatus());
+	                        collateralData.put("isReleased", collateral.getIsReleased());
+	                        collateralData.put("createdBy", collateral.getCreatedBy());
+	                        collateralData.put("createdDate", collateral.getCreatedDate());
+	                        collateralData.put("updatedBy", collateral.getUpdatedBy());
+	                        collateralData.put("updatedDate", collateral.getUpdatedDate());
+	                        collateralData.put("delFlag", collateral.getDelFlag());
+	                        response.put("corporateCollateralDetail", collateralData);
+	                    });
+	        }
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+	                "Corporate application full details fetched successfully (owner before collateral)", response));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                        "Error occurred: " + e.getMessage(), null));
+	    }
+	}
+	
+	
+	@GetMapping("/getAllCorporateApplicationDetails")
+	public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getAllCorporateApplicationDetails() {
+	    try {
+	        List<CorporateApplicationDetail> corpApps = corporateRepo.findByDelFlag("N");
+
+	        if (corpApps.isEmpty()) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+	                .body(new ApiResponse<>(HttpStatus.NOT_FOUND.value(), "No corporate applications found", null));
+	        }
+
+	        List<Map<String, Object>> finalResponseList = new ArrayList<>();
+
+	        for (CorporateApplicationDetail corpApp : corpApps) {
+	            Map<String, Object> response = new LinkedHashMap<>();
+
+	            // Corporate Application Details
+	            Map<String, Object> appData = new LinkedHashMap<>();
+	            appData.put("corporateApplicationId", corpApp.getId());
+	            appData.put("corporateApplicationNumber", corpApp.getCorporateApplicationNumber());
+	            appData.put("corporateId", corpApp.getCorporateId());
+	            appData.put("companyLegalName", corpApp.getCompanyLegalName());
+	            appData.put("amountRequested", corpApp.getAmountRequested());
+	            appData.put("contactFirstName", corpApp.getContactFirstName());
+	            appData.put("contactLastName", corpApp.getContactLastName());
+	            appData.put("contactEmailId", corpApp.getContactEmailId());
+	            appData.put("contactPhone", corpApp.getContactPhone());
+	            appData.put("createdBy", corpApp.getCreatedBy());
+	            appData.put("createdDate", corpApp.getCreatedDate());
+	            appData.put("updatedBy", corpApp.getUpdatedBy());
+	            appData.put("updatedDate", corpApp.getUpdatedDate());
+	            appData.put("delFlag", corpApp.getDelFlag());
+
+	            response.put("corporateApplicationDetail", appData);
+
+	            // User Details
+	            User user = corpApp.getUser();
+	            if (user != null) {
+	                Map<String, Object> userData = new LinkedHashMap<>();
+	                userData.put("userId", user.getUserId());
+	                userData.put("firstName", user.getFirstName());
+	                userData.put("lastName", user.getLastName());
+	                userData.put("email", user.getEmail());
+	                userData.put("phone", user.getPhone());
+
+	                if (user.getRole() != null) {
+	                    userData.put("roleId", user.getRole().getId());
+	                    userData.put("roleName", user.getRole().getRoleName());
+	                }
+
+	                response.put("userDetails", userData);
+
+	                String userId = user.getUserId();
+	                String appNumber = corpApp.getCorporateApplicationNumber();
+
+	                // Business Details
+	                corporateBusinessdetailRepositoy
+	                    .findByCorporateApplicationNumberAndUser_UserIdAndDelFlag(appNumber, userId, "N")
+	                    .ifPresent(business -> {
+	                        Map<String, Object> businessData = new LinkedHashMap<>();
+	                        businessData.put("businessId", business.getId());
+	                        businessData.put("dba", business.getDba());
+	                        businessData.put("ssnItin", business.getSsnItin());
+	                        businessData.put("businessAddress1", business.getBusinessAddress1());
+	                        businessData.put("businessAddress2", business.getBusinessAddress2());
+	                        businessData.put("zipCode", business.getZipCode());
+	                        businessData.put("city", business.getCity());
+	                        businessData.put("state", business.getState());
+	                        businessData.put("revenue", business.getRevenue());
+	                        businessData.put("timeInBusiness", business.getTimeInBusiness());
+	                        businessData.put("businessStartDate", business.getBusinessStartDate());
+	                        businessData.put("typeOfBusiness", business.getTypeOfBusiness());
+	                        businessData.put("industry", business.getIndustry());
+	                        businessData.put("taxId", business.getTaxId());
+	                        businessData.put("createdBy", business.getCreatedBy());
+	                        businessData.put("createdDate", business.getCreatedDate());
+	                        businessData.put("updatedBy", business.getUpdatedBy());
+	                        businessData.put("updatedDate", business.getUpdatedDate());
+	                        businessData.put("delFlag", business.getDelFlag());
+
+	                        response.put("corporateBusinessDetail", businessData);
+	                    });
+
+	                // Owner Details
+	                ownerdeatilsrepo
+	                    .findFirstByCorporateApplicationDetailAndDelFlagOrderByCreatedDateAsc(corpApp, "N")
+	                    .ifPresent(owner -> {
+	                        Map<String, Object> ownerData = new LinkedHashMap<>();
+	                        ownerData.put("id", owner.getId());
+	                        ownerData.put("ownerFirstName", owner.getOwnerFirstName());
+	                        ownerData.put("ownerLastName", owner.getOwnerLastName());
+	                        ownerData.put("dateOfBirth", owner.getDateOfBirth());
+	                        ownerData.put("ownershipPercentage", owner.getOwnershipPercentage());
+	                        ownerData.put("addressLine1", owner.getAddressLine1());
+	                        ownerData.put("addressLine2", owner.getAddressLine2());
+	                        ownerData.put("zipCode", owner.getZipCode());
+	                        ownerData.put("city", owner.getCity());
+	                        ownerData.put("state", owner.getState());
+	                        ownerData.put("creditReportAuthorized", owner.getCreditReportAuthorized());
+	                        ownerData.put("createdBy", owner.getCreatedBy());
+	                        ownerData.put("createdDate", owner.getCreatedDate());
+	                        ownerData.put("updatedBy", owner.getUpdatedBy());
+	                        ownerData.put("updatedDate", owner.getUpdatedDate());
+
+	                        response.put("ownerDetail", ownerData);
+	                    });
+
+	                // Collateral Details
+	                collateralRepo
+	                    .findByCorporateApplicationDetail_CorporateApplicationNumberAndUser_UserIdAndDelFlag(appNumber, userId, "N")
+	                    .ifPresent(collateral -> {
+	                        Map<String, Object> collateralData = new LinkedHashMap<>();
+	                        collateralData.put("collateralId", collateral.getId());
+	                        collateralData.put("collateralType", collateral.getCollateralType());
+	                        collateralData.put("propertyType", collateral.getPropertyType());
+	                        collateralData.put("isPrimaryResidential", collateral.getIsPrimaryResidential());
+	                        collateralData.put("propertyStreetAddress", collateral.getPropertyStreetAddress());
+	                        collateralData.put("zipCode", collateral.getZipCode());
+	                        collateralData.put("city", collateral.getCity());
+	                        collateralData.put("state", collateral.getState());
+	                        collateralData.put("country", collateral.getCountry());
+	                        collateralData.put("approvedValue", collateral.getApprovedValue());
+	                        collateralData.put("debt", collateral.getDebt());
+	                        collateralData.put("validationDate", collateral.getValidationDate());
+	                        collateralData.put("assignedLtv", collateral.getAssignedLtv());
+	                        collateralData.put("perfectionStatus", collateral.getPerfectionStatus());
+	                        collateralData.put("isReleased", collateral.getIsReleased());
+	                        collateralData.put("createdBy", collateral.getCreatedBy());
+	                        collateralData.put("createdDate", collateral.getCreatedDate());
+	                        collateralData.put("updatedBy", collateral.getUpdatedBy());
+	                        collateralData.put("updatedDate", collateral.getUpdatedDate());
+	                        collateralData.put("delFlag", collateral.getDelFlag());
+
+	                        response.put("corporateCollateralDetail", collateralData);
+	                    });
+	            }
+
+	            finalResponseList.add(response);
+	        }
+
+	        return ResponseEntity.ok(new ApiResponse<>(HttpStatus.OK.value(),
+	            "All corporate application details fetched successfully", finalResponseList));
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	            .body(new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+	                "Error occurred: " + e.getMessage(), null));
+	    }
+	}
+
 
 }
